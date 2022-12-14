@@ -4,3 +4,4 @@ db.json
 .DS_Store
 Thumbs.db
 public/
+*.log
