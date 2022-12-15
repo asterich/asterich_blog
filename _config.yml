@@ -106,4 +106,4 @@ theme: next
 deploy:
   - type: git
     repo: https://github.com/asterich/asterich_blog
-    branch: gh_pages
+    branch: master
