@@ -109,3 +109,10 @@ deploy:
   - type: git
     repo: https://github.com/asterich/asterich_blog
     branch: gh-pages
+
+# Search
+search:
+  path: search.xml
+  field: post
+  content: true
+  format: html
