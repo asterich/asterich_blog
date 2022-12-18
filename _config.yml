@@ -70,6 +70,7 @@ default_category: uncategorized
 category_map:
   杂谈: essay
   编程: programming
+  动漫: acg
 tag_map:
 
 # Metadata elements
@@ -116,3 +117,9 @@ search:
   field: post
   content: true
   format: html
+
+# Algolia
+algolia:
+  applicationID: QL0J44QNT0
+  apiKey: a331bb2091b892c23102d024f7c3a31c
+  indexName: asterich_blog
