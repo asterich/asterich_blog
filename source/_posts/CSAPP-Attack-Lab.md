@@ -30,7 +30,7 @@ unsigned getbuf() {
 在这个 lab 中，我们需要用不同方法发起缓冲区攻击，以恰当的参数调用三个函数：`touch1()`、`touch2()`、`touch3()`。这个 lab 大体提供了两种方式：代码注入、面向 return 编程(ROP)。下文会细 🔒。
 
 在开搞之前，回顾一下栈帧结构：
-![](/2022/12/16/CSAPP-Attack-Lab/image/stack_frame.png)
+{% img /2022/12/16/CSAPP-Attack-Lab/image/stack_frame.png "栈帧结构" "stack_frame.png" %}
 
 在返回时，%rsp 指向返回地址，然后将其弹出，并将程序计数器 PC 设置成这个返回地址。我们主要在这里做文章。
 
