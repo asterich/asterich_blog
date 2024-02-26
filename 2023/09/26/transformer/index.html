@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 6.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha256-wiz7ZSCn/btzhjKDQBms9Hx4sSeUYsDrTLg7roPstac=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"asterich.top","root":"/","images":"/images","scheme":"Muse","darkmode":false,"version":"8.19.1","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="Transformer是一个基于自注意力机制的深度学习模型，它完全摒弃了传统的RNN和LSTM结构，而是完全依赖于注意力机制来捕获序列中的依赖关系。 自从2017年被Vaswani等人在论文《Attention Is All You Need》中提出后，已经成为了NLP领域乃至整个AI领域的一个重要里程碑。它的出现为Seq2Seq的任务带来了革命性的变化，特别是在机器翻译、文本摘要和问答系统等领域">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Transformer">
+<meta property="og:url" content="https://asterich.top/2023/09/26/transformer/index.html">
+<meta property="og:site_name" content="asterich&#39;s blog">
+<meta property="og:description" content="Transformer是一个基于自注意力机制的深度学习模型，它完全摒弃了传统的RNN和LSTM结构，而是完全依赖于注意力机制来捕获序列中的依赖关系。 自从2017年被Vaswani等人在论文《Attention Is All You Need》中提出后，已经成为了NLP领域乃至整个AI领域的一个重要里程碑。它的出现为Seq2Seq的任务带来了革命性的变化，特别是在机器翻译、文本摘要和问答系统等领域">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-09-26T12:29:39.000Z">
+<meta property="article:modified_time" content="2024-02-26T16:10:52.813Z">
+<meta property="article:author" content="asterich">
+<meta property="article:tag" content="AI">
+<meta property="article:tag" content="NLP">
+<meta property="article:tag" content="优化">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://asterich.top/2023/09/26/transformer/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://asterich.top/2023/09/26/transformer/","path":"/2023/09/26/transformer/","title":"Transformer"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>Transformer | asterich's blog</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<!-- hexo injector head_end start -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hexo-math@4.0.0/dist/style.css">
+<!-- hexo injector head_end end --></head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">asterich's blog</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A8%A1%E5%9E%8B%E7%BB%93%E6%9E%84"><span class="nav-number">1.</span> <span class="nav-text">模型结构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88"><span class="nav-number">2.</span> <span class="nav-text">性能瓶颈</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BC%98%E5%8C%96"><span class="nav-number">3.</span> <span class="nav-text">优化</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E6%96%87%E7%8C%AE"><span class="nav-number">4.</span> <span class="nav-text">参考文献</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">asterich</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">8</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">17</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+
+        </div>
+      </div>
+    </div>
+
+    
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://asterich.top/2023/09/26/transformer/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="asterich">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="asterich's blog">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="Transformer | asterich's blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Transformer
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2023-09-26 20:29:39" itemprop="dateCreated datePublished" datetime="2023-09-26T20:29:39+08:00">2023-09-26</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2024-02-27 00:10:52" itemprop="dateModified" datetime="2024-02-27T00:10:52+08:00">2024-02-27</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/programming/" itemprop="url" rel="index"><span itemprop="name">编程</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>Transformer是一个基于自注意力机制的深度学习模型，它完全摒弃了传统的RNN和LSTM结构，而是完全依赖于注意力机制来捕获序列中的依赖关系。</p>
+<p>自从2017年被Vaswani等人在论文《Attention Is All You Need》中提出后，已经成为了NLP领域乃至整个AI领域的一个重要里程碑。它的出现为Seq2Seq的任务带来了革命性的变化，特别是在机器翻译、文本摘要和问答系统等领域。如今，绝大部分NLP领域的SOTA模型，如GPT、BERT等，都是基于Transformer。</p>
+<h2 id="模型结构">模型结构</h2>
+<p>Transformer 一般主要由 Encoder 和 Decoder 两种模块组成，其结构大致如下图： [图片]</p>
+<p>其中，Input/Output Embedding 就是对输入/输出序列作文本嵌入，将一段 token 序列转化为向量表示，每个 token 对应一个向量。假设 token 长度为 <span class="math inline">\(l\)</span>，每个 token 对应的向量为 <span class="math inline">\(d\)</span>，那么 Embedding 后 Encoder/Decoder 的输入维度为 <span class="math inline">\(d * l\)</span> 。</p>
+<p>在 Embedding 上面，左半部分灰色框是 Encoder，右半部分是 Decoder， Encoder 和 Decoder 都可以叠加。 我们注意到 Encoder 和 Decoder 两种模块里面都有 Attention 模块和 Feed Forward 模块，其中 Attention 模块是 Transformer 的精华。其结构如下： [图片]</p>
+<p>左边是单个的点积 Attention， 它先让 Q 和 K 作矩阵乘法（相当于每个 token 做点积，算相关程度），得到一个 <span class="math inline">\(l * l\)</span> 矩阵，再依次进行 Scale、Mask、SoftMax处理，最后跟 V 做矩阵乘。右边是多个点积 Attention 构成的 Multi-Head Attention，其与单个点积 Attention 不同之处就在于它把三个输入矩阵都在<span class="math inline">\(d\)</span>维作投影（乘以三个权重矩阵<span class="math inline">\(W^Q\)</span>、<span class="math inline">\(W^K\)</span>、<span class="math inline">\(W^V\)</span>），而后分割成<span class="math inline">\(d/h\)</span>，再分别输入到 <span class="math inline">\(h\)</span> 个点积 Attention，最后连接起来回原长，再进行一次投影（乘以权重矩阵<span class="math inline">\(W^{Out}\)</span>）。下面有张标注了矩阵大小的详细计算过程： [图片]</p>
+<p>回到总的结构图，我们发现 Encoder 的 Attention 层输入是完全相同的，这就是 Self-Attention。Decoder 则在 Self-Attention 层和 Feed-Forward层之间又添加了一个 Attention 层，其 K、V 输入来自于 Encoder 层输出，而 Q输入来自于前一个 Self-Attention 层的输出。另外， Decoder 的 Self-Attention 层还加了一层 Mask，用来在训练的时候遮住后面的内容，让训练和推理的行为一致。</p>
+<p>Attention 之后还有一个 Feed-Forward 层，其所作运算如下： [图片]</p>
+<p>这个层是点对点的，也就是说每一个 token 单独处理。详细计算过程如下图： [图片]</p>
+<p>经过 Decoder 层后，Transformer 输出的是每个词成为生成序列下一个词的概率。在推理时，它根据概率选取下一个词后，把序列回馈到 Decoder 的输入（也就是 Outputs ）中，这就是说，此时 Decoder 是自回归的。 在实际模型中，Encoder 和 Decoder 不一定都需要。以下是 Encoder-only 和 Decoder-only 模型的结构： [图片]</p>
+<p>Decoder-only 少了第二层 Attention，与 Encoder-only 的区别仅在于前者是自回归的。著名的 BERT 和 GPT 分别是 Encoder-only 和 Decoder-only 的。</p>
+<p>这里需要提一下， Decoder-only 推理时在上图中看上去是<span class="math inline">\(l\)</span>次迭代，如果严格按照 Mask 操作来进行生成，每次迭代都重新生成每个单词的 <span class="math inline">\(Q\)</span>、<span class="math inline">\(K\)</span>、<span class="math inline">\(V\)</span>向量，计算复杂度会比 Encoder-only 高很多。这里我们采取将前面单词生成的<span class="math inline">\(K\)</span>、<span class="math inline">\(V\)</span>向量缓存起来，在后来的生成过程中进行重用，这样的话总体的计算复杂度能降低到和 Encoder-only 相近的水平，这也是下文中两者相同规模时 FLOPs 相近的原因。但是，Decoder-only 仍然没法并行，而且仍然需要重复加载权重矩阵，这使得它的推理速度仍旧比 Encoder-only 要慢很多。</p>
+<h2 id="性能瓶颈">性能瓶颈</h2>
+<p>这里主要考察推断时的性能。在这里，我们引入两个指标：FLOPs（总共的浮点操作数）和 MOPs（总共访存的字节数）。</p>
+<p>我们拿 BERT（Encoder-only）和 GPT-2（Decoder-only）做例子，首先看一看它们的 FLOPs 和 MOPs： [图片]</p>
+<p>在这两张图里面，FLOPs 和 MOPs 都是超线性增长的，因为矩阵乘法的复杂度增长本身就是 <span class="math inline">\(O(l^2)\)</span> 的。另外，参数相同的 GPT-2 和 BERT-Base（都是 12 层 Encoder/Decoder），其 FLOPs 比较相近，但是 GPT-2 的 MOPs 显然比两种规模的 BERT 都高很多，这是因为它每次生成 token 都要重新加载权重矩阵。</p>
+<p>我们再引入 Arithmetic Intensity 的概念，其可以通过 FLOPs 除以 MOPs 计算得到。我们看一下两种模型的 Arithmetic Intensity： [图片]</p>
+<p>一开始， Arithmetic Intensity 是增长的；但是随着输入序列长度的增长， Arithmetic Intensity 逐渐减小。我们尤其注意到，GPT 的Arithmetic Intensity 一直很小，这就意味着这类 Decoder-only 模型是 memory-bounded 的。</p>
+<p>我们具体到每种操作的 FLOPs 和 MOPs（BERT）： [图片]</p>
+<p>可以看到，投影操作，尤其是 Feed-Forward 中的，一开始是占主导地位的，随着序列长度增长，激活操作的矩阵乘法开始成为主要影响因素；激活操作相比投影操作的 Arithmetic Intensity 小很多，这使得总体的 Arithmetic Intensity 先升后降。另外，Softmax 等非线性操作（被归到 Others 中）在 FLOPs 中占比很小，但是在 MOPs 中占比随序列增长变得相当大，这是因为 Softmax 一般需要数次访问矩阵的一横排。在 GPT-2 中， Arithmetic Intensity 减小的幅度还会变得非常大。</p>
+<p>我们再看一下两种模型的延迟分解（CPU 下）： [图片]</p>
+<p>这与我们前面的观察一致。由于 GPT-2 与 BERT 在 FLOPs 上相近但是在 MOPs 上差别很大，GPT-2 的推理速度比 BERT 慢很多。</p>
+<h2 id="优化">优化</h2>
+<p>这里给出几种推理阶段常见的优化，其中有不少是适用于整个 DNN 的。 1. 量化 量化是 DNN 中非常常用的优化，其好处显而易见，既能降低内存使用，又能提升计算效率。但是，它可能存在精度降低和异常值的问题。精度降低可以通过混合精度解决，而异常值可以通过不均匀的量化或者引入表示异常值的额外精度（如 FP8 类型）来解决。 2. 稀疏化 稀疏化是一种将多余的参数（权重或者激活）去除的方法。在 Transformer 中，参数的稀疏性比较明显，因此我们能够使用稀疏化的手段。稀疏化大体上分两种： 1. 权重裁剪：在权重矩阵中将一些非常小的权重置0，而后将整个矩阵转换成稀疏表示。 2. 激活裁剪：将不重要的神经元激活边裁剪掉。 3. 优化非线性操作 如前所述，Softmax 等非线性操作可能给 Transformer 模型优化带来很大挑战。相较于设计专用硬件，可能的优化有查表、函数约化等等。 4. 计算调度 计算调度分两种：计算图级别（Graph-level）的调度和操作级别（Operation-level）的调度。 1. 计算图调度 这一级别的调度主要是 kernel fusion，但是我们很可能还会利用计算图优化的其他手段。 - kernel fusion 对于消除内存拷贝非常有效，向来是研究的大热门。 - 公共子表达式消除（CSE）、常量传播、死代码消除等编译领域相关的优化也很可能会用到。 2. 操作级别调度 这一级别的调度主要是将计算图转化成硬件上的操作，大致步骤如下： - 分块（tiling）。 - 确定数据流。这一步指的是排序每一个 tile 执行的顺序，可以归结为一个循环重排问题。 - 确定并行的维度。 - 流水化通讯（内存访问）和计算，例如双缓冲。 - 映射到硬件指令集中。</p>
+<pre><code>其中，分块实际上非常重要，因为前面的瓶颈分析显示 Decoder-only 的模型是 memory-bounded 的，好的分块能够充分利用加速器各个存储层级，有效减少访存负担。同时，分块还会影响计算图调度，如果两个 kernel 在某一存储层级分块的大小和形状不一样，是没法直接进行 fusion 的。因此，一些工作将分块和计算图优化结合起来，取得了较好效果。</code></pre>
+<p>另外，操作级别调度相当复杂，kernel 配置的搜索空间相当巨大。常用的搜索方法有以下几种： - 暴力搜索：字面意思。有些暴搜可能会人工剪枝。 - 反馈驱动的搜索：通过 profiling 搜集运行时的反馈信息，利用传统机器学习的算法，对好的配置进行选择。 - 基于约束的优化：跟暴力搜索和反馈驱动相当不同，它将一些调度问题转化为数学上的优化问题。例如，利用多面体模型可以对循环进行建模，然后做向量化和循环分块等优化。</p>
+<h2 id="参考文献">参考文献</h2>
+<ul>
+<li>Full Stack Optimization of Transformer Inference: a Survey: https://arxiv.org/pdf/2302.14017.pdf</li>
+<li>Attention Is All You Need: https://arxiv.org/pdf/1706.03762.pdf</li>
+<li>https://jalammar.github.io/illustrated-gpt2/</li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/AI/" rel="tag"># AI</a>
+              <a href="/tags/NLP/" rel="tag"># NLP</a>
+              <a href="/tags/%E4%BC%98%E5%8C%96/" rel="tag"># 优化</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2023/05/05/Spiderland%E4%B9%90%E8%AF%84/" rel="prev" title="Spiderland">
+                  <i class="fa fa-angle-left"></i> Spiderland
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2024</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">asterich</span>
+  </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/muse/" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>
