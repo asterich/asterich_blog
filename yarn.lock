@@ -1524,6 +1524,11 @@ hexo-theme-landscape@^0.0.3:
   resolved "https://repo.huaweicloud.com/repository/npm/hexo-theme-landscape/-/hexo-theme-landscape-0.0.3.tgz"
   integrity sha512-b0Di+TUVs4ESrNX4ULEh9uQmADpO6kr10rIJ2OGZM8suNQNFKdxn+vJUjnLfKkCPJAfVmS7/S83KCNYe4tpoNw==
 
+hexo-theme-next@^8.19.1:
+  version "8.19.1"
+  resolved "https://registry.npmjs.org/hexo-theme-next/-/hexo-theme-next-8.19.1.tgz"
+  integrity sha512-qtILs1j0FpWi4hk+WcdjoOfztvMZZsqe6lg6SAEPJdPMsalLyoo7Jaf2AoDneMadE4hyF0n6daPhHLa3A+5m5A==
+
 hexo-util@^2.0.0, hexo-util@^2.1.0, hexo-util@^2.2.0, hexo-util@^2.5.0, hexo-util@^2.7.0:
   version "2.7.0"
   resolved "https://repo.huaweicloud.com/repository/npm/hexo-util/-/hexo-util-2.7.0.tgz"

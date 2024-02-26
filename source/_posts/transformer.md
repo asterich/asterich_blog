@@ -8,11 +8,11 @@ tags:
 category: 编程
 ---
 
-[TOC]
-
 Transformer是一个基于自注意力机制的深度学习模型，它完全摒弃了传统的RNN和LSTM结构，而是完全依赖于注意力机制来捕获序列中的依赖关系。
 
 自从2017年被Vaswani等人在论文《Attention Is All You Need》中提出后，已经成为了NLP领域乃至整个AI领域的一个重要里程碑。它的出现为Seq2Seq的任务带来了革命性的变化，特别是在机器翻译、文本摘要和问答系统等领域。如今，绝大部分NLP领域的SOTA模型，如GPT、BERT等，都是基于Transformer。
+
+<!--more-->
 
 ## 模型结构
 Transformer 一般主要由 Encoder 和 Decoder 两种模块组成，其结构大致如下图：
