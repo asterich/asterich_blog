@@ -717,11 +717,11 @@ livere_uid: # <your_uid>
 # Gitalk
 # For more information: https://gitalk.github.io
 gitalk:
-  enable: true
+  enable: false
   github_id: asterich
   repo: asterich_blog
-  client_id: f4e9b3c5f0a7ccc0d150
-  client_secret: 28e78c58275447fe33ea4a0cbc2b46f30017329c
+  client_id: 
+  client_secret: 
   admin_user: asterich
   distraction_free_mode: true # Facebook-like distraction free mode
   # When the official proxy is not available, you can change it to your own proxy address
@@ -734,8 +734,8 @@ gitalk:
 # Utterances
 # For more information: https://utteranc.es
 utterances:
-  enable: false
-  repo: user-name/repo-name # Github repository owner and name
+  enable: true
+  repo: asterich/asterich_blog_comment # Github repository owner and name
   # Available values: pathname | url | title | og:title
   issue_term: pathname
   # Available values: github-light | github-dark | preferred-color-scheme | github-dark-orange | icy-dark | dark-blue | photon-dark | boxy-light
