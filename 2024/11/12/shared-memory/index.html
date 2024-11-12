@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 6.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha256-wiz7ZSCn/btzhjKDQBms9Hx4sSeUYsDrTLg7roPstac=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"asterich.top","root":"/","images":"/images","scheme":"Mist","darkmode":false,"version":"8.19.1","exturl":false,"sidebar":{"position":"right","display":"hide","padding":18,"offset":12},"copycode":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":"disqus","storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="最近在嗯看 shared memory（共享内存）, 感觉要似了。这是一种 ipc 手段（不是 cuda 那个啦），具体来讲是通过将不同进程的虚拟地址映射到同一块物理内存，从而让这块内存能够被跨进程访问。由于通信实际上就是直接 memcpy, 速度上会比较快，但是需要一些跨进程同步手段（比如信号量之类），这方面会比较难写。下面具体讲讲罢。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="shared memory">
+<meta property="og:url" content="https://asterich.top/2024/11/12/shared-memory/index.html">
+<meta property="og:site_name" content="asterich&#39;s blog">
+<meta property="og:description" content="最近在嗯看 shared memory（共享内存）, 感觉要似了。这是一种 ipc 手段（不是 cuda 那个啦），具体来讲是通过将不同进程的虚拟地址映射到同一块物理内存，从而让这块内存能够被跨进程访问。由于通信实际上就是直接 memcpy, 速度上会比较快，但是需要一些跨进程同步手段（比如信号量之类），这方面会比较难写。下面具体讲讲罢。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2024-11-11T16:42:18.000Z">
+<meta property="article:modified_time" content="2024-11-12T16:48:59.849Z">
+<meta property="article:author" content="asterich">
+<meta property="article:tag" content="C">
+<meta property="article:tag" content="sys">
+<meta name="twitter:card" content="summary">
+
+
+<link rel="canonical" href="https://asterich.top/2024/11/12/shared-memory/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://asterich.top/2024/11/12/shared-memory/","path":"/2024/11/12/shared-memory/","title":"shared memory"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>shared memory | asterich's blog</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<!-- hexo injector head_end start -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hexo-math@4.0.0/dist/style.css">
+<!-- hexo injector head_end end --></head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">asterich's blog</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#shared-memory-%E5%88%9D%E6%8E%A2"><span class="nav-number">1.</span> <span class="nav-text">shared memory 初探</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#shared-memory-%E7%9A%84-api"><span class="nav-number">2.</span> <span class="nav-text">shared memory 的 API</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#system-v-api"><span class="nav-number">2.1.</span> <span class="nav-text">System-V API</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#posix-api"><span class="nav-number">2.2.</span> <span class="nav-text">POSIX API</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#shared-memory-%E7%9A%84%E4%BD%BF%E7%94%A8"><span class="nav-number">3.</span> <span class="nav-text">shared memory 的使用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#benchmark"><span class="nav-number">4.</span> <span class="nav-text">benchmark</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#references"><span class="nav-number">5.</span> <span class="nav-text">references</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">asterich</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">9</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">18</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/asterich" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;asterich" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license animated" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" class="cc-opacity" rel="noopener" target="_blank"><img src="https://cdnjs.cloudflare.com/ajax/libs/creativecommons-vocabulary/2020.11.3/assets/license_badges/small/by_nc_sa.svg" alt="Creative Commons"></a>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+    <div class="sidebar-inner sidebar-blogroll">
+      <div class="links-of-blogroll animated">
+        <div class="links-of-blogroll-title"><i class="fa fa-globe fa-fw"></i>
+          链接
+        </div>
+        <ul class="links-of-blogroll-list">
+            <li class="links-of-blogroll-item">
+              <a href="https://stellarlane.github.io/" title="https:&#x2F;&#x2F;stellarlane.github.io" rel="noopener" target="_blank">https://stellarlane.github.io</a>
+            </li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://asterich.top/2024/11/12/shared-memory/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="asterich">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="asterich's blog">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="shared memory | asterich's blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          shared memory
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2024-11-12 00:42:18" itemprop="dateCreated datePublished" datetime="2024-11-12T00:42:18+08:00">2024-11-12</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2024-11-13 00:48:59" itemprop="dateModified" datetime="2024-11-13T00:48:59+08:00">2024-11-13</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/programming/" itemprop="url" rel="index"><span itemprop="name">编程</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>最近在嗯看 shared memory（共享内存）, 感觉要似了。这是一种 ipc 手段（不是 cuda 那个啦），具体来讲是通过将不同进程的虚拟地址映射到同一块物理内存，从而让这块内存能够被跨进程访问。由于通信实际上就是直接 memcpy, 速度上会比较快，但是需要一些跨进程同步手段（比如信号量之类），这方面会比较难写。下面具体讲讲罢。</p>
+<span id="more"></span>
+<h2 id="shared-memory-初探">shared memory 初探</h2>
+<p>我们可以通过 <code>free</code> 命令来看用了多少共享内存：</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ free</span><br><span class="line">               total        used        free      shared  buff/cache   available</span><br><span class="line">Mem:        16297496     4288184    11109888        3712      899424    11673012</span><br><span class="line">Swap:        4194304           0     4194304</span><br><span class="line">$ </span><br></pre></td></tr></table></figure>
+<p>当然你也可以通过 <code>ipcs</code> 来查看。这玩应不仅能看共享内存还能看别的 ipc 信息：</p>
+<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">$ ipcs</span><br><span class="line"></span><br><span class="line">------ Message Queues --------</span><br><span class="line">key        msqid      owner      perms      used-bytes   messages    </span><br><span class="line"></span><br><span class="line">------ Shared Memory Segments --------</span><br><span class="line">key        shmid      owner      perms      bytes      nattch     status      </span><br><span class="line"></span><br><span class="line">------ Semaphore Arrays --------</span><br><span class="line">key        semid      owner      perms      nsems </span><br><span class="line"></span><br><span class="line">$ </span><br></pre></td></tr></table></figure>
+<p>不过这个方式会有些问题，下文会讲到。</p>
+<p>我们可以通过一些手段控制系统层面的共享内存数目和大小。主要有下面三个配置项： - SHMMAX: 共享内存的最大段大小。你可以通过查看或者写入文件 <code>/proc/sys/kernel/shmmax</code> 来控制它，也可以用 <code>sysctl</code> 来控制它。<code>sysctl</code> 是这么控制滴：<code>sysctl -w kernel.shmmax=2147483648 &gt;&gt; /etc/sysctl.conf</code>。 - SHMMNI: 系统中最多的共享内存数目。控制方法同上。 - SHMALL：共享内存的总量。控制方法同上。</p>
+<h2 id="shared-memory-的-api">shared memory 的 API</h2>
+<p>linux 提供了两种风格的 API, 分别是 System-V API 和 POSIX API。这两种 API 长得很不一样。（实际上对于其他的 IPC 手段，这两种 API 的接口都不太一样）</p>
+<h3 id="system-v-api">System-V API</h3>
+<p>SysV API 主要使用 SysV 独有的 IPC key 来标识一个 ipc 对象，共享内存也是一样。我们首先需要一个 API 生成这个 key:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/types.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/ipc.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">key_t</span> <span class="title function_">ftok</span> <span class="params">(<span class="type">const</span> <span class="type">char</span> *pathname, <span class="type">int</span> proj_id)</span>;</span><br></pre></td></tr></table></figure>
+<p><code>pathname</code> 需要是个已存在的文件（因为 key 的生成主要用该文件的 inode id），<code>proj_id</code> 随便怎样都行啦，但是不能是 0. 它返回一个 SysV IPC key。</p>
+<p>然后我们需要一个 API 来通过 key 获取 shared memory:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/ipc.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/shm.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">shmget</span> <span class="params">(<span class="type">key_t</span> key, <span class="type">size_t</span> size, <span class="type">int</span> shmflg)</span>;</span><br></pre></td></tr></table></figure>
+<p><code>key</code> 就是刚刚获取的 key；当然你也可以把它设置为 <code>IPC_PRIVATE</code> ，这样他就会完全忽略后面的 <code>shmflg</code> 创建一段新的。<code>shmflg</code> 用来控制你申请到的共享内存是怎么样的。有这么一些选项：</p>
+<ul>
+<li><code>IPC_CREAT</code> 创建一段新的共享内存。如果跟 <code>IPC_EXCL</code> 合用，那么 key 已经有共享内存对应的情况下会报错返回 -1 。</li>
+<li><code>IPC_EXCL</code> 见上。</li>
+<li><code>SHM_HUGETLB</code> 表明这段内存是大页的。</li>
+<li><code>SHM_NORESERVE</code> 跟 <code>MAP_NORESERVE</code> 差不多，就是告诉 os 不要给我这段内存保留 swap 空间啦。</li>
+</ul>
+<p>这个 API 的返回值就是这段内存的 id 啦。</p>
+<blockquote>
+<p>这里实际上有个问题，就是你用 <code>IPC_PRIVATE</code> 获取的共享内存怎么能够让其他进程访问到呢？ 一般的解决办法是进程之间通过别的手段交换 shmid，或者干脆就是一对父子进程，继承了 shmid。</p>
+</blockquote>
+<p>由于返回的是 id 而不是具体的虚拟地址，我们还需要一个能够返回虚拟地址的 API:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/types.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/shm.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">void</span> *<span class="title function_">shmat</span> <span class="params">(<span class="type">int</span> shmid, <span class="type">const</span> <span class="type">void</span> *shmaddr, <span class="type">int</span> shmflg)</span>;</span><br></pre></td></tr></table></figure>
+<p><code>shmid</code> 就是 <code>shmget()</code> 的返回值； <code>shmflg</code> 是一些操控选项，不过跟 <code>shmget()</code> 里面的不太一样；如果我们想指定它映射到哪个虚拟地址，我们可以用 <code>shmaddr</code> 指定这个虚拟地址。</p>
+<p>这里还是给一下 <code>shmflg</code> 的选项：</p>
+<ul>
+<li><code>SHM_RND</code> 在 <code>shmaddr</code> 被指定时，用来给这个地址作对齐的；如果没有的话， <code>shmaddr</code> 就必须是对齐的。</li>
+<li><code>SHM_RDONLY</code> 指定这一段内存对于现在的进程是只读的。</li>
+<li><code>SHM_REMAP</code> 直接 remap <code>shmaddr</code> 原先指向的内存。这个只有 Linux 有。</li>
+</ul>
+<p>另外提一嘴，这段内存在 fork 之后是会被子进程继承的。</p>
+<p>如果想要控制这段共享内存，怎么办呢？我们用 <code>shmctl()</code>:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/ipc.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/shm.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">shmctl</span><span class="params">(<span class="type">int</span> shmid, <span class="type">int</span> cmd, <span class="keyword">struct</span> shmid_ds *buf)</span>; </span><br></pre></td></tr></table></figure>
+<p>这个 <code>shmid_ds</code> 是个什么东西呢？</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">shmid_ds</span> &#123;</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">ipc_perm</span> <span class="title">shm_perm</span>;</span>    <span class="comment">/* Ownership and permissions */</span></span><br><span class="line">    <span class="type">size_t</span>          shm_segsz;   <span class="comment">/* Size of segment (bytes) */</span></span><br><span class="line">    <span class="type">time_t</span>          shm_atime;   <span class="comment">/* Last attach time */</span></span><br><span class="line">    <span class="type">time_t</span>          shm_dtime;   <span class="comment">/* Last detach time */</span></span><br><span class="line">    <span class="type">time_t</span>          shm_ctime;   <span class="comment">/* Last change time */</span></span><br><span class="line">    <span class="type">pid_t</span>           shm_cpid;    <span class="comment">/* PID of creator */</span></span><br><span class="line">    <span class="type">pid_t</span>           shm_lpid;    <span class="comment">/* PID of last shmat(2)/shmdt(2) */</span></span><br><span class="line">    <span class="type">shmatt_t</span>        shm_nattch;  <span class="comment">/* No. of current attaches */</span></span><br><span class="line">    ...</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">ipc_perm</span> &#123;</span></span><br><span class="line">    <span class="type">key_t</span>          __key;    <span class="comment">/* Key supplied to shmget(2) */</span></span><br><span class="line">    <span class="type">uid_t</span>          uid;      <span class="comment">/* Effective UID of owner */</span></span><br><span class="line">    <span class="type">gid_t</span>          gid;      <span class="comment">/* Effective GID of owner */</span></span><br><span class="line">    <span class="type">uid_t</span>          cuid;     <span class="comment">/* Effective UID of creator */</span></span><br><span class="line">    <span class="type">gid_t</span>          cgid;     <span class="comment">/* Effective GID of creator */</span></span><br><span class="line">    <span class="type">unsigned</span> <span class="type">short</span> mode;     <span class="comment">/* Permissions + SHM_DEST and</span></span><br><span class="line"><span class="comment">                                SHM_LOCKED flags */</span></span><br><span class="line">    <span class="type">unsigned</span> <span class="type">short</span> __seq;    <span class="comment">/* Sequence number */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p>可以说是一个用来管理共享内存的数据结构。</p>
+<p><code>cmd</code> 有哪些我累了不想讲了，只要知道 <code>IPC_STAT</code> 用来获取 <code>shmid_ds</code>，<code>IPC_SET</code> 用来设置 <code>shmid_ds</code>，<code>IPC_RMID</code> 用来删掉这块共享内存即可。</p>
+<p>如果不想要这块内存了怎么办？使用 <code>shmdt()</code> 罢：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/types.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/shm.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">shmdt</span><span class="params">(<span class="type">const</span> <span class="type">void</span> *shmaddr)</span>;</span><br></pre></td></tr></table></figure>
+<p>可以看到，这个 SysV API 是比较麻烦的，而下面要讲到的 POSIX API 更加契合 Unix “万物皆文件”的思想。</p>
+<h3 id="posix-api">POSIX API</h3>
+<p>POSIX API 是比 SysV API 更加晚近的一种 API，它更加依靠“名字”而非 key 来对共享内存进行标识。这个设施是通过 tmpfs 来提供的。这里只有两个 API 是共享内存独有的，其他的操作可以通过一些已有的设施来进行。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/mman.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/stat.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;fcntl.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">shm_open</span> <span class="params">(<span class="type">const</span> <span class="type">char</span> *name, <span class="type">int</span> oflag, <span class="type">mode_t</span> mode)</span>;</span><br></pre></td></tr></table></figure>
+<p>这玩应就是一个共享内存版的 <code>open()</code> ，这意味着它返回的就是一个文件描述符。不过名字有些差别，一定得是 <code>/&#123;name&#125;</code> 的形式。这并不意味着它会在根目录给你拉屎，只是一个名字而已。实际上，通过这种方法创建的共享内存文件都是在 /dev/shm/ 下。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/mman.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/stat.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;fcntl.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">shm_unlink</span><span class="params">(<span class="type">const</span> <span class="type">char</span> *name)</span>; </span><br></pre></td></tr></table></figure>
+<p>这个 API 就是根据名字删掉那个共享内存文件了。</p>
+<p>既然是文件，我们就可以通过一些文件的手段来操控这段共享内存。你可以用 <code>ftruncate()</code> 来控制共享内存大小，用 <code>close()</code> 关掉共享内存的文件。不仅如此，我们还可以用（而且必须用） <code>mmap()</code> 映射到这块共享内存上，用法也是跟平常的文件映射一模一样：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Get shared memory </span></span><br><span class="line"><span class="keyword">if</span> ((fd_shm = shm_open (SHARED_MEM_NAME, O_RDWR, <span class="number">0</span>)) == <span class="number">-1</span>)</span><br><span class="line">    error (<span class="string">&quot;shm_open&quot;</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> ((shared_mem_ptr = mmap (<span class="literal">NULL</span>, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_shm, <span class="number">0</span>)) == MAP_FAILED)</span><br><span class="line">    error (<span class="string">&quot;mmap&quot;</span>);</span><br></pre></td></tr></table></figure>
+<p>你只需要指定 <code>MAP_SHARED</code> 就行了。是不是很简单？</p>
+<p>读到这里，相信有聪明的读者会问既然这玩应又新又好，为什么 SysV API 还活着呢？这个主要是兼容性的问题，起码 macOS 并没有支持完全。还有一个问题是另一些老设施是没法看到 POSIX shared memory 的。比如说 <code>ipcs</code>:</p>
+<blockquote>
+<p>ipcs shows information on System V inter-process communication facilities. By default it shows information about all three resources: shared memory segments, message queues, and semaphore arrays.</p>
+</blockquote>
+<p>还有人会问既然如此为什么不直接用常规文件和 <code>mmap()</code> 啊，这个确实。有人读了 glibc 的源码，发现 <code>shm_open()</code> 相比于 <code>open()</code> 只不过是给文件名加了前缀而已，要说有什么区别的话还是 <code>/dev/shm</code> 是个 tmpfs 而已（（（</p>
+<blockquote>
+<p>不过好像在一些别的系统上这两者也会有差别</p>
+</blockquote>
+<blockquote>
+<p>你还可以用 <code>memfd_create()</code> 创建一个内存上的文件</p>
+</blockquote>
+<h2 id="shared-memory-的使用">shared memory 的使用</h2>
+<p>shared memory 的使用比较麻烦，需要担心跨进程同步的问题，一般搭配信号量来使用。</p>
+<p>这里给一个使用 POSIX API 的示例程序，它总体上是生产者模式的，producer 会给 consumer 按行发送里尔克的第一首哀歌，但是 buf 只有一块共享内存（（（</p>
+<p><code>producer.cpp</code>:</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;cstdio&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;cstdlib&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/mman.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/stat.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;fcntl.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/types.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;unistd.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;cstring&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;semaphore.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">exit_on_error</span><span class="params">(<span class="type">const</span> <span class="type">char</span> *msg)</span> </span>&#123;</span><br><span class="line">    <span class="built_in">perror</span>(msg);</span><br><span class="line">    <span class="built_in">exit</span>(EXIT_FAILURE);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">const</span> <span class="type">char</span> *contents = <span class="string">R&quot;(</span></span><br><span class="line"><span class="string">Wer, wenn ich schriee, hörte mich denn aus der Engel</span></span><br><span class="line"><span class="string">Ordnungen? und gesetzt selbst, es nähme</span></span><br><span class="line"><span class="string">einer mich plötzlich ans Herz: ich verginge von seinem</span></span><br><span class="line"><span class="string">stärkeren Dasein. Denn das Schöne ist nichts</span></span><br><span class="line"><span class="string">als des Schrecklichen Anfang, den wir noch grade ertragen,</span></span><br><span class="line"><span class="string">und wir bewundern es so, weil es gelassen verschmäht,</span></span><br><span class="line"><span class="string">uns zu zerstören. Ein jeder Engel ist schrecklich.</span></span><br><span class="line"><span class="string">exit</span></span><br><span class="line"><span class="string">)&quot;</span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">int</span> fd = <span class="built_in">shm_open</span>(<span class="string">&quot;/shmem_0&quot;</span>, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);</span><br><span class="line">    <span class="keyword">if</span> (fd == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;shm_open&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;contents size: %ld\n&quot;</span>, <span class="built_in">strlen</span>(contents));</span><br><span class="line"></span><br><span class="line">    <span class="built_in">ftruncate</span>(fd, <span class="number">4096</span>);</span><br><span class="line">    <span class="type">char</span> *addr = (<span class="type">char</span> *)<span class="built_in">mmap</span>(<span class="literal">NULL</span>, <span class="number">4096</span>, PROT_READ | PROT_WRITE, MAP_SHARED, fd, <span class="number">0</span>);</span><br><span class="line">    <span class="keyword">if</span> (addr == MAP_FAILED)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;mmap&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="built_in">fprintf</span>(stderr, <span class="string">&quot;addr: %p [0~%d]\n&quot;</span>, addr, <span class="number">4095</span>);</span><br><span class="line">    <span class="built_in">fprintf</span>(stderr, <span class="string">&quot;file: /dev/shm%s\n&quot;</span>, <span class="string">&quot;/shmem_0&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="type">sem_t</span> *sem = <span class="built_in">sem_open</span>(<span class="string">&quot;/sem_0&quot;</span>, O_CREAT, S_IRUSR | S_IWUSR, <span class="number">1</span>);</span><br><span class="line">    <span class="keyword">if</span> (sem == SEM_FAILED)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_open&quot;</span>);</span><br><span class="line">    <span class="type">sem_t</span> *sem_empty_buf = <span class="built_in">sem_open</span>(<span class="string">&quot;/sem_empty_buf&quot;</span>, O_CREAT, S_IRUSR | S_IWUSR, <span class="number">1</span>);</span><br><span class="line">    <span class="keyword">if</span> (sem_empty_buf == SEM_FAILED)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_open&quot;</span>);</span><br><span class="line">    <span class="type">sem_t</span> *sem_full_buf = <span class="built_in">sem_open</span>(<span class="string">&quot;/sem_full_buf&quot;</span>, O_CREAT, S_IRUSR | S_IWUSR, <span class="number">0</span>);</span><br><span class="line">    <span class="keyword">if</span> (sem_full_buf == SEM_FAILED)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_open&quot;</span>);</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">    <span class="built_in">fprintf</span>(stderr, <span class="string">&quot;process %d wrote into addr %p\n&quot;</span>, <span class="built_in">getpid</span>(), addr);</span><br><span class="line"></span><br><span class="line">    <span class="type">char</span> *addr2 = addr;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span> *p = contents;</span><br><span class="line">    <span class="keyword">while</span> (*p != <span class="string">&#x27;\0&#x27;</span>) &#123;</span><br><span class="line">        <span class="built_in">sem_wait</span>(sem_empty_buf);</span><br><span class="line">        <span class="built_in">sem_wait</span>(sem);</span><br><span class="line">        <span class="keyword">while</span> (*p != <span class="string">&#x27;\n&#x27;</span>) &#123;</span><br><span class="line">            *addr2 = *p;</span><br><span class="line">            ++addr2;</span><br><span class="line">            ++p;</span><br><span class="line">        &#125;</span><br><span class="line">        *addr2 = <span class="string">&#x27;\n&#x27;</span>;</span><br><span class="line">        ++addr2;</span><br><span class="line">        ++p;</span><br><span class="line">        <span class="built_in">sem_post</span>(sem);</span><br><span class="line">        <span class="built_in">sem_post</span>(sem_full_buf);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">munmap</span>(addr, <span class="number">4096</span>) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;munmap&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">close</span>(fd) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;close&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">sem_close</span>(sem) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_close&quot;</span>);</span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">sem_close</span>(sem_empty_buf) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_close&quot;</span>);</span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">sem_close</span>(sem_full_buf) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_close&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">shm_unlink</span>(<span class="string">&quot;/shmem_0&quot;</span>) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;shm_unlink&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">sem_unlink</span>(<span class="string">&quot;/sem_0&quot;</span>) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_unlink&quot;</span>);</span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">sem_unlink</span>(<span class="string">&quot;/sem_empty_buf&quot;</span>) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_unlink&quot;</span>);</span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">sem_unlink</span>(<span class="string">&quot;/sem_full_buf&quot;</span>) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_unlink&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>consumer.cpp</code>:</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 前面的不复制了...</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">int</span> fd = <span class="built_in">shm_open</span>(<span class="string">&quot;/shmem_0&quot;</span>, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);</span><br><span class="line">    <span class="keyword">if</span> (fd == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;shm_open&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="built_in">ftruncate</span>(fd, <span class="number">4096</span>);</span><br><span class="line"></span><br><span class="line">    <span class="type">char</span> *addr = (<span class="type">char</span> *)<span class="built_in">mmap</span>(<span class="literal">NULL</span>, <span class="number">4096</span>, PROT_READ | PROT_WRITE, MAP_SHARED, fd, <span class="number">0</span>);</span><br><span class="line">    <span class="keyword">if</span> (addr == MAP_FAILED)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;mmap&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="type">sem_t</span> *sem = <span class="built_in">sem_open</span>(<span class="string">&quot;/sem_0&quot;</span>, O_EXCL);</span><br><span class="line">    <span class="keyword">if</span> (sem == SEM_FAILED)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_open&quot;</span>);</span><br><span class="line">    <span class="type">sem_t</span> *sem_empty_buf = <span class="built_in">sem_open</span>(<span class="string">&quot;/sem_empty_buf&quot;</span>, O_EXCL);</span><br><span class="line">    <span class="keyword">if</span> (sem_empty_buf == SEM_FAILED)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_open&quot;</span>);</span><br><span class="line">    <span class="type">sem_t</span> *sem_full_buf = <span class="built_in">sem_open</span>(<span class="string">&quot;/sem_full_buf&quot;</span>, O_EXCL);</span><br><span class="line">    <span class="keyword">if</span> (sem_full_buf == SEM_FAILED)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_open&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="built_in">fprintf</span>(stderr, <span class="string">&quot;process %d read from addr: %p\n&quot;</span>, <span class="built_in">getpid</span>(), addr);</span><br><span class="line"></span><br><span class="line">    <span class="type">char</span> *addr2 = addr;</span><br><span class="line">    <span class="type">char</span> line_buf[<span class="number">256</span>];</span><br><span class="line">    <span class="type">char</span> *line_buf_ptr = line_buf;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">while</span> (<span class="literal">true</span>) &#123;</span><br><span class="line">        <span class="built_in">sem_wait</span>(sem_full_buf);</span><br><span class="line">        <span class="built_in">sem_wait</span>(sem);</span><br><span class="line">        <span class="type">char</span> *p = addr2;</span><br><span class="line">        <span class="keyword">while</span> (*p != <span class="string">&#x27;\n&#x27;</span>) &#123;</span><br><span class="line">            *line_buf_ptr = *p;</span><br><span class="line">            ++line_buf_ptr;</span><br><span class="line">            ++p;</span><br><span class="line">        &#125;</span><br><span class="line">        *line_buf_ptr = <span class="string">&#x27;\n&#x27;</span>;</span><br><span class="line">        ++line_buf_ptr;</span><br><span class="line">        *line_buf_ptr = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line">        line_buf_ptr = line_buf;</span><br><span class="line">        addr2 = p + <span class="number">1</span>;</span><br><span class="line">        <span class="built_in">sem_post</span>(sem);</span><br><span class="line">        <span class="built_in">sem_post</span>(sem_empty_buf);</span><br><span class="line">        <span class="keyword">if</span> (<span class="built_in">strcmp</span>(line_buf, <span class="string">&quot;exit\n&quot;</span>) == <span class="number">0</span>)</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;%s&quot;</span>, line_buf);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">munmap</span>(addr, <span class="number">4096</span>) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;munmap&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">close</span>(fd) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;close&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">sem_close</span>(sem) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_close&quot;</span>);</span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">sem_close</span>(sem_empty_buf) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_close&quot;</span>);</span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">sem_close</span>(sem_full_buf) == <span class="number">-1</span>)</span><br><span class="line">        <span class="built_in">exit_on_error</span>(<span class="string">&quot;sem_close&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>值得吐槽的是这个同步写死我了。。。写的时候老是报 bus error</p>
+<h2 id="benchmark">benchmark</h2>
+<p>shared memory 不是说比别的 IPC 快嘛，我们来看看是真的吗。这里有一个 <a target="_blank" rel="noopener" href="https://github.com/goldsborough/ipc-bench">benchmark</a>, 大家可以看看。shared memory 似乎跟 mmap 普通文件没啥差别，甚至其实要慢一些。</p>
+<h2 id="references">references</h2>
+<ol type="1">
+<li><a target="_blank" rel="noopener" href="http://ranler.github.io/2013/07/01/System-V-and-POSIX-IPC/">http://ranler.github.io/2013/07/01/System-V-and-POSIX-IPC/</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.softprayog.in/programming/interprocess-communication-using-system-v-shared-memory-in-linux">https://www.softprayog.in/programming/interprocess-communication-using-system-v-shared-memory-in-linux</a></li>
+<li><a target="_blank" rel="noopener" href="https://man7.org/linux/man-pages/man2/memfd_create.2.html">https://man7.org/linux/man-pages/man2/memfd_create.2.html</a></li>
+<li><a target="_blank" rel="noopener" href="https://man7.org">https://man7.org</a></li>
+<li><a target="_blank" rel="noopener" href="https://linux.die.net">https://linux.die.net</a></li>
+<li><a target="_blank" rel="noopener" href="https://stackoverflow.com/questions/4582968/system-v-ipc-vs-posix-ipc">https://stackoverflow.com/questions/4582968/system-v-ipc-vs-posix-ipc</a></li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>asterich
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://asterich.top/2024/11/12/shared-memory/" title="shared memory">https://asterich.top/2024/11/12/shared-memory/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/C/" rel="tag"># C</a>
+              <a href="/tags/sys/" rel="tag"># sys</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2023/09/26/transformer/" rel="prev" title="Transformer">
+                  <i class="fa fa-angle-left"></i> Transformer
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    <div class="comments utterances-container"></div>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2024</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">asterich</span>
+  </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/mist/" rel="noopener" target="_blank">NexT.Mist</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+  
+
+  <script class="next-config" data-name="enableMath" type="application/json">true</script><script class="next-config" data-name="mathjax" type="application/json">{"enable":true,"tags":"none","js":{"url":"https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js","integrity":"sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI="}}</script>
+<script src="/js/third-party/math/mathjax.js"></script>
+
+
+<script class="next-config" data-name="utterances" type="application/json">{"enable":true,"repo":"asterich/asterich_blog_comment","issue_term":"pathname","theme":"github-light"}</script>
+<script src="/js/third-party/comments/utterances.js"></script>
+
+</body>
+</html>
