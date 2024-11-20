@@ -319,6 +319,8 @@ default:
 调试发现， `CO_NEW` 的线程还没有可用的上下文，你只能直接跳转过去：
 
 ```c
+/// CO_NEW
+/// Context has not set yet. Jump directly.
 case CO_NEW: {
   /// Save context and jump there.
   ((struct co volatile *)exec_co)->status = CO_RUNNABLE;
@@ -412,6 +414,28 @@ static inline void restore_return() {
       :
   );
 }
+```
+
+加入恢复函数后， `co_yield()` 里的对应逻辑更改如下：
+
+```c
+/// CO_NEW
+/// Context has not set yet. Jump directly.
+case CO_NEW: {
+  /// Save context and jump there.
+  ((struct co volatile *)exec_co)->status = CO_RUNNABLE;
+  stack_switch_call(((struct co *)exec_co)->stack + STACK_SIZE, exec_co->func,
+                    (uintptr_t)exec_co->arg);
+  restore_return();
+
+  /// When coroutine returns, %rip goes here.
+  /// Set status to CO_DEAD.
+  exec_co->status = CO_DEAD;
+
+  /// Jump to the waiter.
+  curr_co = exec_co->waiter;
+  longjmp(exec_co->waiter->context, 1);
+} break;
 ```
 
 还记得对齐要求吗？你可以自己改改。
