@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 6.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha256-wiz7ZSCn/btzhjKDQBms9Hx4sSeUYsDrTLg7roPstac=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"asterich.top","root":"/","images":"/images","scheme":"Mist","darkmode":false,"version":"8.19.1","exturl":false,"sidebar":{"position":"right","display":"hide","padding":18,"offset":12},"copycode":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":"disqus","storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"}}</script><script src="/js/config.js"></script>
+
+    <meta name="description" content="南大的 OS Lab 还挺有意思的，这个 M2 是用 C 语言写一个小的有栈协程库，虽然比不上工业级协程库，但也是加深了对不少东西的认识，搓出来还是比较有成就感的。回头再讲一下有栈&#x2F;无栈协程和协程怎么用罢。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="NJU OS Lab M2: libco">
+<meta property="og:url" content="https://asterich.top/2024/11/20/jyy-M2-libco/index.html">
+<meta property="og:site_name" content="asterich&#39;s blog">
+<meta property="og:description" content="南大的 OS Lab 还挺有意思的，这个 M2 是用 C 语言写一个小的有栈协程库，虽然比不上工业级协程库，但也是加深了对不少东西的认识，搓出来还是比较有成就感的。回头再讲一下有栈&#x2F;无栈协程和协程怎么用罢。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://asterich.top/2024/11/20/jyy-M2-libco/segfault.png">
+<meta property="og:image" content="https://asterich.top/2024/11/20/jyy-M2-libco/segfault2.png">
+<meta property="og:image" content="https://asterich.top/2024/11/20/jyy-M2-libco/before_ret.png">
+<meta property="og:image" content="https://asterich.top/2024/11/20/jyy-M2-libco/after_ret.png">
+<meta property="og:image" content="https://asterich.top/2024/11/20/jyy-M2-libco/exec_co.png">
+<meta property="article:published_time" content="2024-11-20T15:36:11.000Z">
+<meta property="article:modified_time" content="2024-11-20T19:11:58.326Z">
+<meta property="article:author" content="asterich">
+<meta property="article:tag" content="C">
+<meta property="article:tag" content="Assembly">
+<meta property="article:tag" content="sys">
+<meta property="article:tag" content="Coroutine">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://asterich.top/2024/11/20/jyy-M2-libco/segfault.png">
+
+
+<link rel="canonical" href="https://asterich.top/2024/11/20/jyy-M2-libco/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://asterich.top/2024/11/20/jyy-M2-libco/","path":"/2024/11/20/jyy-M2-libco/","title":"NJU OS Lab M2: libco"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>NJU OS Lab M2: libco | asterich's blog</title>
+  
+
+
+
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<!-- hexo injector head_end start -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hexo-math@4.0.0/dist/style.css">
+<!-- hexo injector head_end end --></head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">asterich's blog</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+  </ul>
+</nav>
+
+
+
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%80%E4%B9%88%E6%98%AF%E5%8D%8F%E7%A8%8B"><span class="nav-number">1.</span> <span class="nav-text">什么是协程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#lab-%E4%BB%BB%E5%8A%A1"><span class="nav-number">2.</span> <span class="nav-text">lab 任务</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9E%E7%8E%B0"><span class="nav-number">3.</span> <span class="nav-text">实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="nav-number">3.1.</span> <span class="nav-text">数据结构</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%BE%B5%E5%85%A5%E5%BC%8F%E9%93%BE%E8%A1%A8"><span class="nav-number">3.1.1.</span> <span class="nav-text">侵入式链表</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#struct-co"><span class="nav-number">3.1.2.</span> <span class="nav-text">struct co</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#%E5%8D%8F%E7%A8%8B%E7%9A%84%E5%88%86%E9%85%8D%E4%B8%8E%E9%87%8A%E6%94%BE"><span class="nav-number">3.1.2.1.</span> <span class="nav-text">协程的分配与释放</span></a></li><li class="nav-item nav-level-5"><a class="nav-link" href="#%E7%A8%8B%E5%BA%8F%E5%88%9D%E5%A7%8B%E5%8C%96%E5%92%8C%E6%B8%85%E7%90%86"><span class="nav-number">3.1.2.2.</span> <span class="nav-text">程序初始化和清理</span></a></li></ol></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#co_start"><span class="nav-number">3.2.</span> <span class="nav-text">co_start()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#co_wait"><span class="nav-number">3.3.</span> <span class="nav-text">co_wait()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#co_yield"><span class="nav-number">3.4.</span> <span class="nav-text">co_yield()</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%80%89%E5%8D%8F%E7%A8%8B"><span class="nav-number">3.4.1.</span> <span class="nav-text">选协程</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%8D%A2%E4%B8%8A%E4%B8%8B%E6%96%87"><span class="nav-number">3.4.2.</span> <span class="nav-text">换上下文</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%9C%9F%E7%9A%84%E5%81%87%E7%9A%84"><span class="nav-number">3.4.3.</span> <span class="nav-text">真的假的？</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#stack_switch_call"><span class="nav-number">3.4.4.</span> <span class="nav-text">stack_switch_call()</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%B8%80%E4%BA%9B%E5%B0%8F%E9%97%AE%E9%A2%98"><span class="nav-number">3.4.5.</span> <span class="nav-text">一些小问题</span></a></li></ol></li></ol></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">asterich</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">11</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">22</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/asterich" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;asterich" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license animated" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" class="cc-opacity" rel="noopener" target="_blank"><img src="https://cdnjs.cloudflare.com/ajax/libs/creativecommons-vocabulary/2020.11.3/assets/license_badges/small/by_nc_sa.svg" alt="Creative Commons"></a>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+    <div class="sidebar-inner sidebar-blogroll">
+      <div class="links-of-blogroll animated">
+        <div class="links-of-blogroll-title"><i class="fa fa-globe fa-fw"></i>
+          链接
+        </div>
+        <ul class="links-of-blogroll-list">
+            <li class="links-of-blogroll-item">
+              <a href="https://stellarlane.github.io/" title="https:&#x2F;&#x2F;stellarlane.github.io" rel="noopener" target="_blank">https://stellarlane.github.io</a>
+            </li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://asterich.top/2024/11/20/jyy-M2-libco/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="asterich">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="asterich's blog">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="NJU OS Lab M2: libco | asterich's blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          NJU OS Lab M2: libco
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2024-11-20 23:36:11" itemprop="dateCreated datePublished" datetime="2024-11-20T23:36:11+08:00">2024-11-20</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2024-11-21 03:11:58" itemprop="dateModified" datetime="2024-11-21T03:11:58+08:00">2024-11-21</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/programming/" itemprop="url" rel="index"><span itemprop="name">编程</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><p>南大的 OS Lab 还挺有意思的，这个 M2 是用 C 语言写一个小的有栈协程库，虽然比不上工业级协程库，但也是加深了对不少东西的认识，搓出来还是比较有成就感的。回头再讲一下有栈/无栈协程和协程怎么用罢。</p>
+<span id="more"></span>
+<h2 id="什么是协程">什么是协程</h2>
+<p>协程，最简单粗暴的理解就是“可以挂起/恢复执行的函数”。这跟并行实际上没啥关系，倒是更像中断之类的。它能够完全在用户态下实现并发，而且也比操作系统提供的线程设施轻很多，最适合一些需要高 IO 高并发的场景；当然协程也可以用来做生成器之类的。</p>
+<p>有栈协程和无栈协程是协程两种不同的实现方式，这里不细讲，只要知道有栈协程下协程自有栈空间即可。</p>
+<h2 id="lab-任务">lab 任务</h2>
+<p>牢蒋给了 3 个函数作为协程库的 API：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> co* <span class="title function_">co_start</span><span class="params">(<span class="type">const</span> <span class="type">char</span> *name, <span class="type">void</span> (*func)(<span class="type">void</span> *), <span class="type">void</span> *arg)</span>;</span><br><span class="line"><span class="type">void</span> <span class="title function_">co_yield</span><span class="params">()</span>;</span><br><span class="line"><span class="type">void</span> <span class="title function_">co_wait</span><span class="params">(<span class="keyword">struct</span> co *co)</span>;</span><br></pre></td></tr></table></figure>
+<p>引用下他的要求<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>：</p>
+<blockquote>
+<p>co_start(name, func, arg) 创建一个新的协程，并返回一个指向 struct co 的指针 (类似于 pthread_create)。</p>
+<blockquote>
+<p>新创建的协程从函数 func 开始执行，并传入参数 arg。新创建的协程不会立即执行，而是调用 co_start 的协程继续执行。</p>
+<p>使用协程的应用程序不需要知道 struct co 的具体定义，因此请把这个定义留在 co.c 中；框架代码中并没有限定 struct co 结构体的设计，所以你可以自由发挥。</p>
+<p>co_start 返回的 struct co 指针需要分配内存。我们推荐使用 malloc() 分配。</p>
+</blockquote>
+<p>co_wait(co) 表示当前协程需要等待，直到 co 协程的执行完成才能继续执行 (类似于 pthread_join)。</p>
+<blockquote>
+<p>在被等待的协程结束后、 co_wait() 返回前，co_start 分配的 struct co 需要被释放。如果你使用 malloc()，使用 free() 释放即可。</p>
+<p>因此，每个协程只能被 co_wait 一次 (使用协程库的程序应当保证除了初始协程外，其他协程都必须被 co_wait 恰好一次，否则会造成内存泄漏)。</p>
+</blockquote>
+<p>co_yield() 实现协程的切换。协程运行后一直在 CPU 上执行，直到 func 函数返回或调用 co_yield 使当前运行的协程暂时放弃执行。co_yield 时若系统中有多个可运行的协程时 (包括当前协程)，你应当随机选择下一个系统中可运行的协程。</p>
+</blockquote>
+<p>还有一点值得注意：</p>
+<blockquote>
+<p>main 函数的执行也是一个协程，因此可以在 main 中调用 co_yield 或 co_wait。main 函数返回后，无论有多少协程，进程都将直接终止。</p>
+</blockquote>
+<h2 id="实现">实现</h2>
+<p>牢蒋已经在实验网站上给了很多有用的信息，非常的宝宝巴士，你往下看就能体会到了。</p>
+<h3 id="数据结构">数据结构</h3>
+<h4 id="侵入式链表">侵入式链表</h4>
+<p>这个不多说，看看定义和初始化就行：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">list_head</span> &#123;</span></span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">list_head</span> *<span class="title">next</span>;</span></span><br><span class="line">&#125; <span class="type">list_head_t</span>;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">list_init</span><span class="params">(<span class="type">list_head_t</span> *head)</span> &#123; head-&gt;next = head; &#125;</span><br></pre></td></tr></table></figure>
+<p>我们有一个全局变量，作为协程的链表头：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">list_head_t</span> coroutine_list;</span><br></pre></td></tr></table></figure>
+<h4 id="struct-co"><code>struct co</code></h4>
+<p>最重要的数据结构就是我们亲爱的 <code>struct co</code>。由于我们要手搓的事有栈协程，协程里面起码应该有：</p>
+<ul>
+<li>入口地址和参数</li>
+<li>协程状态</li>
+<li>上下文</li>
+<li>协程自己的栈空间</li>
+</ul>
+<p>万幸的是牢蒋已经给了个参考实现：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">enum</span> <span class="title">co_status</span> &#123;</span></span><br><span class="line">  CO_NEW = <span class="number">1</span>,  <span class="comment">// 新创建，还未执行过</span></span><br><span class="line">  CO_RUNNABLE, <span class="comment">// 已经执行过，yield了</span></span><br><span class="line">  CO_WAITING,  <span class="comment">// 在 co_wait 上等待</span></span><br><span class="line">  CO_DEAD,     <span class="comment">// 已经结束，但还未释放资源</span></span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">co</span> &#123;</span></span><br><span class="line">  <span class="type">char</span> *name;</span><br><span class="line">  <span class="type">void</span> (*func)(<span class="type">void</span> *); <span class="comment">// co_start 指定的入口地址和参数</span></span><br><span class="line">  <span class="type">void</span> *arg;</span><br><span class="line"></span><br><span class="line">  <span class="class"><span class="keyword">enum</span> <span class="title">co_status</span> <span class="title">status</span>;</span>     <span class="comment">// 协程的状态</span></span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">co</span> *<span class="title">waiter</span>;</span>         <span class="comment">// 是否有其他协程在等待当前协程</span></span><br><span class="line">  jmp_buf context;           <span class="comment">// 寄存器现场 (setjmp.h)</span></span><br><span class="line">  __attribute__((aligned(<span class="number">16</span>))) <span class="type">uint8_t</span> <span class="built_in">stack</span>[STACK_SIZE]; <span class="comment">// 协程的堆栈</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p>这个 waiter 有可能可以去掉，不过目前我的实现中还是会依赖它。如果想要一个返回值的话似乎也得留着（？）</p>
+<p>由于我打算用侵入式链表来组织 <code>struct co</code>，这个结构体里面还得加入链表节点；后面会发现如果不做 LRU 的话会有协程饥饿的问题，本🐭又不想真的写一个 LRU 队列，于是偷懒加了一个 <code>call_cnt</code>, 表示目前为止被调度到的次数。</p>
+<blockquote>
+<p>这样的实现会有什么问题呢？ <code>call_cnt</code> 溢出你就完蛋了！</p>
+</blockquote>
+<p>于是最后的 <code>struct co</code> 如下：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">co</span> &#123;</span></span><br><span class="line">  <span class="type">char</span> *name;</span><br><span class="line">  <span class="type">void</span> (*func)(<span class="type">void</span> *); <span class="comment">// co_start 指定的入口地址和参数</span></span><br><span class="line">  <span class="type">void</span> *arg;</span><br><span class="line"></span><br><span class="line">  <span class="type">size_t</span> call_cnt;</span><br><span class="line">  <span class="class"><span class="keyword">enum</span> <span class="title">co_status</span> <span class="title">status</span>;</span>     <span class="comment">// 协程的状态</span></span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">co</span> *<span class="title">waiter</span>;</span>         <span class="comment">// 是否有其他协程在等待当前协程</span></span><br><span class="line">  jmp_buf context;           <span class="comment">// 寄存器现场 (setjmp.h)</span></span><br><span class="line">  __attribute__((aligned(<span class="number">16</span>))) <span class="type">uint8_t</span> <span class="built_in">stack</span>[STACK_SIZE]; <span class="comment">// 协程的堆栈</span></span><br><span class="line"></span><br><span class="line">  <span class="type">list_head_t</span> co_list;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p>这里还有一个问题，为什么凭空多出来一个 <code>__attribute__((aligned(16)))</code> ？这是因为 x86_64 的调用规定需要你在执行 <code>call</code> 指令时， rsp 是 16 字节对齐的； x86_32 则是要求 8 字节对齐。后面也会提到这点。<del>此事在实验网站上亦有记载</p>
+<p>值得一提的是，牢蒋还提醒我们声明一个全局变量，来标示现在正在运行的协程：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">co</span> *<span class="title">curr_co</span> =</span> <span class="literal">NULL</span>;</span><br></pre></td></tr></table></figure>
+<h5 id="协程的分配与释放">协程的分配与释放</h5>
+<p>这里写了两个工具函数 <code>co_alloc</code> 和 <code>co_free</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> co *<span class="title function_">co_alloc</span><span class="params">(<span class="type">const</span> <span class="type">char</span> *name, <span class="type">void</span> (*func)(<span class="type">void</span> *), <span class="type">void</span> *arg)</span> &#123;</span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">co</span> *<span class="title">new_co</span> =</span> (<span class="keyword">struct</span> co *)<span class="built_in">calloc</span>(<span class="number">1</span>, <span class="keyword">sizeof</span>(<span class="keyword">struct</span> co));</span><br><span class="line">  new_co-&gt;name = (<span class="type">char</span> *)<span class="built_in">calloc</span>(<span class="built_in">strlen</span>(name) + <span class="number">1</span>, <span class="keyword">sizeof</span>(<span class="type">char</span>));</span><br><span class="line">  list_append_tail(&amp;coroutine_list, &amp;new_co-&gt;co_list);</span><br><span class="line">  new_co-&gt;status = CO_NEW; <span class="comment">/// every coroutine is CO_NEW at the beginning</span></span><br><span class="line">  new_co-&gt;waiter = <span class="literal">NULL</span>;</span><br><span class="line">  <span class="built_in">strcpy</span>(new_co-&gt;name, name);</span><br><span class="line">  new_co-&gt;func = func;</span><br><span class="line">  new_co-&gt;arg = arg;</span><br><span class="line">  <span class="keyword">return</span> new_co;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">co_free</span><span class="params">(<span class="keyword">struct</span> co *co)</span> &#123;</span><br><span class="line">  list_remove(&amp;coroutine_list, &amp;co-&gt;co_list);</span><br><span class="line">  <span class="built_in">free</span>(co-&gt;name);</span><br><span class="line">  <span class="built_in">free</span>(co);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h5 id="程序初始化和清理">程序初始化和清理</h5>
+<p>还记得牢蒋的小贴士吗？<code>main()</code> 也是个协程！而且链表头 <code>coroutine_list</code> 也需要初始化。</p>
+<p>我们可以利用 <code>__attribute__((constructor))</code> 和 <code>__attribute__((destructor))</code> 来实现初始化和清理：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">__attribute__((constructor)) <span class="type">void</span> <span class="title function_">co_start_main</span><span class="params">()</span> &#123;</span><br><span class="line">  <span class="comment">/// Initialize coroutine_list.</span></span><br><span class="line">  list_init(&amp;coroutine_list);</span><br><span class="line"></span><br><span class="line">  <span class="comment">/// Create a coroutine for main.</span></span><br><span class="line">  assert(curr_co == <span class="literal">NULL</span>);</span><br><span class="line">  curr_co = co_start(<span class="string">&quot;main&quot;</span>, <span class="literal">NULL</span>, <span class="literal">NULL</span>);</span><br><span class="line">  curr_co-&gt;status = CO_RUNNABLE; <span class="comment">/// avoid CO_NEW</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">__attribute__((destructor)) <span class="type">void</span> <span class="title function_">co_free_main</span><span class="params">()</span> &#123;</span><br><span class="line">  <span class="comment">/// Reap all coroutines which still exist.</span></span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">co</span> *<span class="title">co</span> =</span> <span class="literal">NULL</span>;</span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">co</span> *<span class="title">co_next</span> =</span> <span class="literal">NULL</span>;</span><br><span class="line">  list_for_each_entry_safe(co, co_next, &amp;coroutine_list, co_list) &#123;</span><br><span class="line">    co_free(co);</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>下文会讲到 <code>co_start()</code> 实际上只是 <code>co_alloc()</code> 的包装。然后这里 main 协程显然已经在跑了，所以状态不能是 <code>CO_NEW</code>。</p>
+<h3 id="co_start"><code>co_start()</code></h3>
+<p>协程并不是在 <code>co_start()</code> 就开始执行的，所以只要分配一个空协程就行：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> co *<span class="title function_">co_start</span><span class="params">(<span class="type">const</span> <span class="type">char</span> *name, <span class="type">void</span> (*func)(<span class="type">void</span> *), <span class="type">void</span> *arg)</span> &#123;</span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">co</span> *<span class="title">new_co</span> =</span> co_alloc(name, func, arg);</span><br><span class="line">  <span class="keyword">return</span> new_co;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="co_wait"><code>co_wait()</code></h3>
+<p><code>co_wait()</code> 也比较简单，就一直等，等不到就 yield，等到了之后 free 掉：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">co_wait</span><span class="params">(<span class="keyword">struct</span> co *co)</span> &#123;</span><br><span class="line"></span><br><span class="line">  <span class="comment">/// Set the status of current coroutine to CO_WAITING.</span></span><br><span class="line">  curr_co-&gt;status = CO_WAITING;</span><br><span class="line"></span><br><span class="line">  <span class="comment">/// Set the waiter.</span></span><br><span class="line">  co-&gt;waiter = curr_co;</span><br><span class="line"></span><br><span class="line">  <span class="comment">/// When the coroutine we&#x27;re waiting for is not dead,</span></span><br><span class="line">  <span class="comment">/// switch to another coroutine.</span></span><br><span class="line">  <span class="keyword">while</span> (co-&gt;status != CO_DEAD) &#123;</span><br><span class="line">    co_yield();</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="comment">/// It&#x27;s dead, free it.</span></span><br><span class="line">  co_free(co);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="co_yield"><code>co_yield()</code></h3>
+<p>这里是重头戏。我们需要选一个能跑的协程，然后保存/切换上下文。协程的选取、切换的时机、保存的方法都非常重要。</p>
+<p>幸运的是，牢蒋也指定了切换上下文的方法： <code>setjmp()</code> / <code>longjmp()</code>。他甚至告诉了我们怎么使用：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">co_yield</span><span class="params">()</span> &#123;</span><br><span class="line">  <span class="type">int</span> val = setjmp(current-&gt;context);</span><br><span class="line">  <span class="keyword">if</span> (val == <span class="number">0</span>) &#123;</span><br><span class="line">    <span class="comment">// ?</span></span><br><span class="line">  &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    <span class="comment">// ?</span></span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>让我们思考一下：一个协程切出去了以后，别的地方调用 <code>longjmp()</code> 给切回来了，那么切回来的地方在哪里？显然就是 <code>setjmp()</code> 那里。切回来了之后干什么呢？那肯定是继续执行啊！所以 else 分支直接返回就行。</p>
+<p>那上面的分支呢？上面的分支是第一次调用 <code>setjmp()</code> 的情况，这时候我们刚保存好当前协程的上下文，打算切出去。于是，<code>co_yield()</code> 具体该干什么已经很清楚了：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> <span class="title function_">co_yield</span><span class="params">()</span> &#123;</span><br><span class="line">  <span class="keyword">if</span> (setjmp(current-&gt;context) == <span class="number">0</span>) &#123;</span><br><span class="line">    <span class="comment">/// 选协程！</span></span><br><span class="line">    ...</span><br><span class="line"></span><br><span class="line">    <span class="comment">/// 换上下文！</span></span><br><span class="line">    ...</span><br><span class="line">  &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    <span class="keyword">return</span>;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="选协程">选协程</h4>
+<p>前面说过，我们用一种丑陋的方式大致实现了 LRU ，我们就来看看怎么选罢：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/// Find a coroutine to run.</span></span><br><span class="line"><span class="comment">/// Choose one with least called_cnt.</span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">co</span> <span class="title">volatile</span> *<span class="title">exec_co</span> =</span> <span class="literal">NULL</span>;</span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">co</span> *<span class="title">least_called_co</span> =</span> <span class="literal">NULL</span>;</span><br><span class="line"><span class="type">size_t</span> least_called_val = SIZE_MAX;</span><br><span class="line">list_for_each_entry(exec_co, &amp;coroutine_list, co_list) &#123;</span><br><span class="line">    <span class="keyword">if</span> (exec_co-&gt;status == CO_NEW</span><br><span class="line">        || exec_co-&gt;status == CO_RUNNABLE</span><br><span class="line">        || exec_co-&gt;status == CO_WAITING) &#123;</span><br><span class="line">        <span class="keyword">if</span> (least_called_val &gt; exec_co-&gt;call_cnt) &#123;</span><br><span class="line">            least_called_val = exec_co-&gt;call_cnt;</span><br><span class="line">            least_called_co = (<span class="keyword">struct</span> co *)exec_co;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">exec_co = least_called_co;</span><br></pre></td></tr></table></figure>
+<p>为什么加 volatile ？留给读者做习题。</p>
+<h4 id="换上下文">换上下文</h4>
+<p>选好协程之后，我们增加调用次数 <code>call_cnt</code>，然后进行切换就好了：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">curr_co = (<span class="keyword">struct</span> co *)exec_co;</span><br><span class="line">exec_co-&gt;call_cnt++;</span><br><span class="line"><span class="keyword">switch</span> (exec_co-&gt;status) &#123;</span><br><span class="line"><span class="comment">/// CO_RUNNABLE and CO_WAITING</span></span><br><span class="line"><span class="comment">/// Context has already set. Just use longjmp().</span></span><br><span class="line"><span class="keyword">case</span> CO_RUNNABLE:</span><br><span class="line"><span class="keyword">case</span> CO_WAITING: &#123;</span><br><span class="line">  longjmp(((<span class="keyword">struct</span> co *)exec_co)-&gt;context, <span class="number">1</span>);</span><br><span class="line">&#125; <span class="keyword">break</span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">default</span>:</span><br><span class="line">  perror(<span class="string">&quot;co_yield status&quot;</span>);</span><br><span class="line">  <span class="keyword">return</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>别急！你是不是忘写了什么？是的，我忘写了 <code>CO_NEW</code> ！如果 <code>CO_NEW</code> 也用 <code>longjmp()</code> 行不行呢？</p>
+<p>你会死得很惨：</p>
+<figure>
+<img src="/2024/11/20/jyy-M2-libco/segfault.png" alt="" /><figcaption>segfault.png</figcaption>
+</figure>
+<p>调试发现， <code>CO_NEW</code> 的线程还没有可用的上下文，你只能直接跳转过去：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">case</span> CO_NEW: &#123;</span><br><span class="line">  <span class="comment">/// Save context and jump there.</span></span><br><span class="line">  ((<span class="keyword">struct</span> co <span class="keyword">volatile</span> *)exec_co)-&gt;status = CO_RUNNABLE;</span><br><span class="line">  stack_switch_call(((<span class="keyword">struct</span> co *)exec_co)-&gt;<span class="built_in">stack</span> + STACK_SIZE, exec_co-&gt;func,</span><br><span class="line">                    (<span class="type">uintptr_t</span>)exec_co-&gt;arg);</span><br><span class="line">&#125; <span class="keyword">break</span>;</span><br></pre></td></tr></table></figure>
+<p>这个 <code>stack_switch_call()</code> 进行了一个换栈和跳转的工作。这里牢蒋给了一个参考实现：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">stack_switch_call</span><span class="params">(<span class="type">void</span> *sp, <span class="type">void</span> *entry, <span class="type">uintptr_t</span> arg)</span> &#123;</span><br><span class="line">  <span class="keyword">asm</span> <span class="title function_">volatile</span> <span class="params">(</span></span><br><span class="line"><span class="params">#<span class="keyword">if</span> __x86_64__</span></span><br><span class="line"><span class="params">    <span class="string">&quot;movq %0, %%rsp; movq %2, %%rdi; jmp *%1&quot;</span></span></span><br><span class="line"><span class="params">      : : <span class="string">&quot;b&quot;</span>((<span class="type">uintptr_t</span>)sp), <span class="string">&quot;d&quot;</span>(entry), <span class="string">&quot;a&quot;</span>(arg) : <span class="string">&quot;memory&quot;</span></span></span><br><span class="line"><span class="params">#<span class="keyword">else</span></span></span><br><span class="line"><span class="params">    <span class="string">&quot;movl %0, %%esp; movl %2, 4(%0); jmp *%1&quot;</span></span></span><br><span class="line"><span class="params">      : : <span class="string">&quot;b&quot;</span>((<span class="type">uintptr_t</span>)sp - <span class="number">8</span>), <span class="string">&quot;d&quot;</span>(entry), <span class="string">&quot;a&quot;</span>(arg) : <span class="string">&quot;memory&quot;</span></span></span><br><span class="line"><span class="params">#endif</span></span><br><span class="line"><span class="params">  )</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里牢蒋显然挖了一个小坑：如果直接 jmp 过去的话怎么跳回来？因此 jmp 指令要改成 call 指令。</p>
+<p>到了这里，可以回去睡觉了。</p>
+<h4 id="真的假的">真的假的？</h4>
+<p>如果你这时候不偷懒跑一下测试，你会发现段错误了：</p>
+<figure>
+<img src="/2024/11/20/jyy-M2-libco/segfault2.png" alt="" /><figcaption>segfault2.png</figcaption>
+</figure>
+<p>我们可以发现，与之前的段错误相比较，我们的协程是跑完之后才出问题的。讲到这里，饱饱们是不是很好奇，协程跑完之后去了哪里？<del>去电影院了</p>
+<p>我们用 gdb 看一下去了哪里。牢蒋的测例 1 中协程的入口点叫 work，我们在那里打个断点，然后一直 ni。</p>
+<figure>
+<img src="/2024/11/20/jyy-M2-libco/before_ret.png" alt="" /><figcaption>before_ret.png</figcaption>
+</figure>
+<figure>
+<img src="/2024/11/20/jyy-M2-libco/after_ret.png" alt="" /><figcaption>after_ret.png</figcaption>
+</figure>
+<p>在 <code>work()</code> 的 ret 指令跑完过后，我们发现它回到了 <code>co_yield()</code> ！上面这个 call 指令哪来的？注意到这个 call 跳转的不是一个绝对地址，前面提到过，我们需要 <code>stack_switch_call()</code> 跳转到选定协程的入口点 <code>func</code> ，这就是 call 指令的来源。也就是说，它大概是跳转到了 <code>stack_switch_call()</code> 后面，相当于 <code>CO_NEW</code> 状态的新协程执行完了。</p>
+<p>知道了跳转到哪里，我们就比较好进行收尾工作了。首先，我们需要将刚跑完的协程的状态设置成 <code>CO_DEAD</code>，然后让出执行权。这里我直接将执行权让给了等待它的协程 <code>waiter</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">stack_switch_call(((<span class="keyword">struct</span> co *)exec_co)-&gt;<span class="built_in">stack</span> + STACK_SIZE, exec_co-&gt;func,</span><br><span class="line">                    (<span class="type">uintptr_t</span>)exec_co-&gt;arg);</span><br><span class="line"></span><br><span class="line"><span class="comment">/// When coroutine returns, %rip goes here.</span></span><br><span class="line"><span class="comment">/// Set status to CO_DEAD.</span></span><br><span class="line">exec_co-&gt;status = CO_DEAD;</span><br><span class="line"></span><br><span class="line"><span class="comment">/// Jump to the waiter.</span></span><br><span class="line">curr_co = exec_co-&gt;waiter;</span><br><span class="line">longjmp(exec_co-&gt;waiter-&gt;context, <span class="number">1</span>);</span><br></pre></td></tr></table></figure>
+<p>实际上也有用 <code>co_yield()</code> 出让执行权的写法。</p>
+<h4 id="stack_switch_call"><code>stack_switch_call()</code></h4>
+<p>改到这里，我们重新跑一下，发现还是段错误了。调试发现， <code>exec_co</code> 不知道指向哪里了：</p>
+<figure>
+<img src="/2024/11/20/jyy-M2-libco/exec_co.png" alt="" /><figcaption>exec_co.png</figcaption>
+</figure>
+<p>从 <code>exec_co-&gt;status = CO_DEAD;</code> 这句对应的汇编我们可以看出，这个 <code>exec_co</code> 的值实际上就是 rcx 寄存器的。这说明从调用 <code>stack_switch_call()</code> 到返回这段时间，我们的 rcx 寄存器被改变了。一个朴素的想法是调用前保存 rcx 寄存器的值，调用过后恢复。于是我们很容易对 <code>stack_switch_call()</code> 作如下修改（先不管 32 位）：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">stack_switch_call</span><span class="params">(<span class="type">void</span> *sp, <span class="type">void</span> *entry, <span class="type">uintptr_t</span> arg)</span> &#123;</span><br><span class="line">  <span class="keyword">asm</span> <span class="title function_">volatile</span><span class="params">(</span></span><br><span class="line"><span class="params">      <span class="string">&quot;movq %0, %%rsp;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%rcx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;movq %2, %%rdi;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;call *%1\n\t&quot;</span></span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">      : <span class="string">&quot;b&quot;</span>((<span class="type">uintptr_t</span>)sp), <span class="string">&quot;d&quot;</span>(entry), <span class="string">&quot;a&quot;</span>(arg)</span></span><br><span class="line"><span class="params">      : <span class="string">&quot;memory&quot;</span></span></span><br><span class="line"><span class="params">  )</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>我们还可以写出恢复函数 <code>restore_return()</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">restore_return</span><span class="params">()</span> &#123;</span><br><span class="line">  <span class="keyword">asm</span> <span class="title function_">volatile</span><span class="params">(</span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%rcx;&quot;</span></span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">  )</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>还记得对齐要求吗？你可以自己改改。</p>
+<p>你可能好奇这个 rcx 是怎么来的，万一编译器选择了其他寄存器（比如 rdx）怎么办？你也许能想起来有个东西叫 calling convention<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a>：</p>
+<blockquote>
+<ol type="1">
+<li><p>Before calling a subroutine, the caller should save the contents of certain registers that are designated caller-saved. The caller-saved registers are r10, r11, and any registers that parameters are put into. If you want the contents of these registers to be preserved across the subroutine call, push them onto the stack.</p></li>
+<li><p>To pass parameters to the subroutine, we put up to six of them into registers (in order: rdi, rsi, rdx, rcx, r8, r9).</p></li>
+</ol>
+</blockquote>
+<p>这说明我们作为 caller 需要保存上面说的寄存器。根据 calling convention 的改写如下：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/// Save the current context to the coroutine&#x27;s stack and call it.</span></span><br><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">stack_switch_call</span><span class="params">(<span class="type">void</span> *sp, <span class="type">void</span> *entry, <span class="type">uintptr_t</span> arg)</span> &#123;</span><br><span class="line">  <span class="keyword">asm</span> <span class="title function_">volatile</span><span class="params">(</span></span><br><span class="line"><span class="params">      <span class="string">&quot;movq %0, %%rsp;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%r11;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%r10;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%r9;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%r8;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%rcx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%rdx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%rsi;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%rdi;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%rax;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;subq $8, %%rsp;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;movq %2, %%rdi;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;call *%1\n\t&quot;</span></span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">      : <span class="string">&quot;b&quot;</span>((<span class="type">uintptr_t</span>)sp), <span class="string">&quot;d&quot;</span>(entry), <span class="string">&quot;a&quot;</span>(arg)</span></span><br><span class="line"><span class="params">      : <span class="string">&quot;memory&quot;</span></span></span><br><span class="line"><span class="params">  )</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/// Recover context from the coroutine&#x27;s stack.</span></span><br><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">restore_return</span><span class="params">()</span> &#123;</span><br><span class="line">  <span class="keyword">asm</span> <span class="title function_">volatile</span><span class="params">(</span></span><br><span class="line"><span class="params">      <span class="string">&quot;addq $8, %%rsp;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%rax;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%rdi;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%rsi;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%rdx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%rcx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%r8;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%r9;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%r10;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%r11;&quot;</span></span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">  )</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>32 位的版本依葫芦画瓢就行：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/// Save the current context to the coroutine&#x27;s stack and call it.</span></span><br><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">stack_switch_call</span><span class="params">(<span class="type">void</span> *sp, <span class="type">void</span> *entry, <span class="type">uintptr_t</span> arg)</span> &#123;</span><br><span class="line">  <span class="keyword">asm</span> <span class="title function_">volatile</span><span class="params">(</span></span><br><span class="line"><span class="params">      <span class="string">&quot;movl %0, %%esp;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%edx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%ecx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%eax;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;call *%1;&quot;</span></span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">      : <span class="string">&quot;b&quot;</span>((<span class="type">uintptr_t</span>)sp), <span class="string">&quot;d&quot;</span>(entry), <span class="string">&quot;a&quot;</span>(arg)</span></span><br><span class="line"><span class="params">      : <span class="string">&quot;memory&quot;</span></span></span><br><span class="line"><span class="params">  )</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/// Recover context from the coroutine&#x27;s stack.</span></span><br><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">restore_return</span><span class="params">()</span> &#123;</span><br><span class="line">  <span class="keyword">asm</span> <span class="title function_">volatile</span><span class="params">(</span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%eax;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%ecx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%edx;&quot;</span></span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">  )</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="一些小问题">一些小问题</h4>
+<p>改到这里，64 位的测试基本上能跑起来了，但是 32 位的还是会段错误，出错的地方在这里：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">case</span> CO_NEW: &#123;</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">  curr_co = exec_co-&gt;waiter; <span class="comment">/// SEGFAULT!!!</span></span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">&#125; <span class="keyword">break</span>;</span><br></pre></td></tr></table></figure>
+<p>查看对应汇编代码：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">1484:	8b 51 14             	mov    0x14(%ecx),%edx</span><br><span class="line">1487:	8b 5c 24 0c          	mov    0xc(%esp),%ebx</span><br><span class="line">148b:	8b 83 ec ff ff ff    	mov    -0x14(%ebx),%eax</span><br><span class="line">1491:	89 10                	mov    %edx,(%eax)</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>0xc(%esp)</code> 就是 <code>curr_co</code> ，但是我的 <code>curr_co</code> 明明是全局变量啊为什么要相对 esp 寻址？</p>
+<p>这就涉及到 x86 的一个细节：在位置无关代码里面，全局变量地址需要先通过 <code>__x86.get_pc_thunk</code> 放到某个寄存器，再从这个寄存器放到栈上<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a>。再看看之前的实现， esp 寄存器显然还指向刚跑完协程的栈空间，这就会出问题。有一个朴素的解决方法：保存上下文的时候一并保存 esp 。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">stack_switch_call</span><span class="params">(<span class="type">void</span> *sp, <span class="type">void</span> *entry, <span class="type">uintptr_t</span> arg)</span> &#123;</span><br><span class="line">  <span class="keyword">asm</span> <span class="title function_">volatile</span><span class="params">(</span></span><br><span class="line"><span class="params">      <span class="string">&quot;movl %%esp, -8(%0);&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;movl %0, %%esp;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;subl $8, %%esp;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%edx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%ecx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %%eax;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;push %2;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;call *%1;&quot;</span></span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">      : <span class="string">&quot;b&quot;</span>((<span class="type">uintptr_t</span>)sp), <span class="string">&quot;d&quot;</span>(entry), <span class="string">&quot;a&quot;</span>(arg)</span></span><br><span class="line"><span class="params">      : <span class="string">&quot;memory&quot;</span></span></span><br><span class="line"><span class="params">  )</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">restore_return</span><span class="params">()</span> &#123;</span><br><span class="line">  <span class="keyword">asm</span> <span class="title function_">volatile</span><span class="params">(</span></span><br><span class="line"><span class="params">      <span class="string">&quot;addl $4, %%esp;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%eax;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%ecx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%edx;&quot;</span></span></span><br><span class="line"><span class="params">      <span class="string">&quot;pop %%esp;&quot;</span></span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">      :</span></span><br><span class="line"><span class="params">  )</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>不过如果出让执行权使用的是 <code>co_yield()</code> 而不是 longjmp 到 waiter，好像就不用面对这个问题（</p>
+<section class="footnotes" role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1" role="doc-endnote"><p><a target="_blank" rel="noopener" href="https://jyywiki.cn/OS/2022/labs/M2.html">https://jyywiki.cn/OS/2022/labs/M2.html</a><a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2" role="doc-endnote"><p><a target="_blank" rel="noopener" href="https://aaronbloomfield.github.io/pdr/book/x86-64bit-ccc-chapter.pdf">https://aaronbloomfield.github.io/pdr/book/x86-64bit-ccc-chapter.pdf</a><a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn3" role="doc-endnote"><p><a target="_blank" rel="noopener" href="https://stackoverflow.com/questions/6679846/what-is-i686-get-pc-thunk-bx-why-do-we-need-this-call">https://stackoverflow.com/questions/6679846/what-is-i686-get-pc-thunk-bx-why-do-we-need-this-call</a><a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>asterich
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://asterich.top/2024/11/20/jyy-M2-libco/" title="NJU OS Lab M2: libco">https://asterich.top/2024/11/20/jyy-M2-libco/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/C/" rel="tag"># C</a>
+              <a href="/tags/Assembly/" rel="tag"># Assembly</a>
+              <a href="/tags/sys/" rel="tag"># sys</a>
+              <a href="/tags/Coroutine/" rel="tag"># Coroutine</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2024/11/20/%E4%BF%9D%E7%A0%94%E5%A4%8F%E4%BB%A4%E8%90%A5/" rel="prev" title="保研夏令营">
+                  <i class="fa fa-angle-left"></i> 保研夏令营
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    <div class="comments utterances-container"></div>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2024</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">asterich</span>
+  </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/mist/" rel="noopener" target="_blank">NexT.Mist</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/schemes/muse.js"></script><script src="/js/next-boot.js"></script>
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+  
+
+  <script class="next-config" data-name="enableMath" type="application/json">true</script><script class="next-config" data-name="mathjax" type="application/json">{"enable":true,"tags":"none","js":{"url":"https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js","integrity":"sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI="}}</script>
+<script src="/js/third-party/math/mathjax.js"></script>
+
+
+<script class="next-config" data-name="utterances" type="application/json">{"enable":true,"repo":"asterich/asterich_blog_comment","issue_term":"pathname","theme":"github-light"}</script>
+<script src="/js/third-party/comments/utterances.js"></script>
+
+</body>
+</html>
