@@ -5,6 +5,7 @@ date: 2024-11-12 00:42:18
 tags:
   - C
   - sys
+  - shared memory
 category:
   - 编程
 mathjax: true
