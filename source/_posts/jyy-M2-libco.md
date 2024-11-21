@@ -363,7 +363,7 @@ static inline void stack_switch_call(void *sp, void *entry, uintptr_t arg) {
 
 ![after_ret.png](/2024/11/20/jyy-M2-libco/after_ret.png)
 
-在 `work()` 的 ret 指令跑完过后，我们发现它回到了 `co_yield()` ！上面这个 call 指令哪来的？注意到这个 call 跳转的不是一个绝对地址，前面提到过，我们需要 `stack_switch_call()` 跳转到选定协程的入口点 `func` ，这就是 call 指令的来源。也就是说，它大概是跳转到了 `stack_switch_call()` 后面，相当于 `CO_NEW` 状态的新协程执行完了。
+在 `work()` 的 ret 指令跑完过后，我们发现它回到了 `co_yield()` ！上面这个 call 指令哪来的？注意到这个 call 跳转的不是一个绝对地址，前面提到过，我们需要 `stack_switch_call()` 跳转到选定协程的入口点 `func` ，这就是 call 指令的来源。也就是说，程序大概是运行到了 `stack_switch_call()` 后面，相当于一个 `CO_NEW` 状态的新协程执行完了。
 
 知道了跳转到哪里，我们就比较好进行收尾工作了。首先，我们需要将刚跑完的协程的状态设置成 `CO_DEAD`，然后让出执行权。这里我直接将执行权让给了等待它的协程 `waiter`：
 
@@ -416,7 +416,7 @@ static inline void restore_return() {
 }
 ```
 
-加入恢复函数后， `co_yield()` 里的对应逻辑更改如下：
+加入恢复函数后， `co_yield()` 里的对应逻辑变成：
 
 ```c
 /// CO_NEW
@@ -542,7 +542,7 @@ case CO_NEW: {
 
 这里的 `0xc(%esp)` 就是 `curr_co` ，但是我的 `curr_co` 明明是全局变量啊为什么要相对 esp 寻址？
 
-这就涉及到 x86 的一个细节：在位置无关代码里面，全局变量地址需要先通过 `__x86.get_pc_thunk` 放到某个寄存器，再从这个寄存器放到栈上[^3]。再看看之前的实现， esp 寄存器显然还指向刚跑完协程的栈空间，这就会出问题。有一个朴素的解决方法：保存上下文的时候一并保存 esp 。
+这就涉及到 x86 的一个细节：在位置无关代码里面，全局变量地址需要先通过 `__x86.get_pc_thunk` 放到某个寄存器，再从这个寄存器放到栈上[^3]。再看看之前的实现， esp 寄存器显然还指向刚跑完的协程的栈空间，这就会出问题。有一个朴素的解决方法：保存上下文的时候一并保存 esp 。另外提一嘴，这显然有点违反 calling convention ，不过能跑就行了。
 
 ```c
 static inline void stack_switch_call(void *sp, void *entry, uintptr_t arg) {
