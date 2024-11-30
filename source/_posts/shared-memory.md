@@ -206,11 +206,9 @@ if ((shared_mem_ptr = mmap (NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_s
 > resources: shared memory segments, message queues, and semaphore
 > arrays.
 
-还有人会问既然如此为什么不直接用常规文件和 `mmap()` 啊，这个确实。有人读了 glibc 的源码，发现 `shm_open()` 相比于 `open()` 只不过是给文件名加了前缀而已，要说有什么区别的话还是 `/dev/shm` 是个 tmpfs 而已（（（
+还有人会问既然如此为什么不直接用常规文件和 `mmap()` 啊，这个确实。有人读了 glibc 的源码，发现 `shm_open()` 相比于 `open()` 只不过是给文件名加了前缀而已，要说有什么区别的话 `/dev/shm` 是个 tmpfs ，这样 shm 一般来讲不涉及硬盘读写。
 
 > 不过好像在一些别的系统上这两者也会有差别
-
-> 你还可以用 `memfd_create()` 创建一个内存上的文件
 
 ## shared memory 的使用
 
