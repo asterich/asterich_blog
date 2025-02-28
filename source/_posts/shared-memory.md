@@ -199,7 +199,7 @@ if ((shared_mem_ptr = mmap (NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_s
 
 你只需要指定 `MAP_SHARED` 就行了。是不是很简单？
 
-读到这里，相信有聪明的读者会问既然这玩应又新又好，为什么 SysV API 还活着呢？这个主要是兼容性的问题，起码 macOS 并没有支持完全。还有一个问题是另一些老设施是没法看到 POSIX shared memory 的。比如说 `ipcs`:
+读到这里，相信有聪明的读者会问既然这东西又新又好，为什么 SysV API 还活着呢？这个主要是兼容性的问题，起码 macOS 并没有支持完全。还有一个问题是另一些老设施是没法看到 POSIX shared memory 的。比如说 `ipcs`:
 
 > ipcs shows information on System V inter-process communication
 > facilities. By default it shows information about all three
