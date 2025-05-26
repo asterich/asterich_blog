@@ -121,6 +121,6 @@ search:
 
 # Algolia
 algolia:
-  applicationID: QL0J44QNT0
-  apiKey: a331bb2091b892c23102d024f7c3a31c
+  applicationID: JCGDBUXTQC
+  apiKey: 64cda6b0e24004d36fcc17ddc2b4dac3
   indexName: asterich_blog
