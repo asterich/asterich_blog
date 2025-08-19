@@ -179,6 +179,7 @@ links_settings:
 
 links:
   https://stellarlane.github.io: https://stellarlane.github.io
+  https://woodman3.github.io: https://woodman3.github.io
 
 # Table of Contents in the Sidebar
 # Front-matter variable (nonsupport wrap expand_all).
@@ -365,7 +366,7 @@ codeblock:
   # All available themes: https://theme-next.js.org/highlight/
   theme:
     light: default
-    dark: stackoverflow-dark
+    dark: arta
   prism:
     light: prism
     dark: prism-dark
