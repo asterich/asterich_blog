@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222"><meta name="generator" content="Hexo 6.3.0">
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" integrity="sha256-VHqXKFhhMxcpubYf9xiWdCiojEbY9NexQ4jh8AxbvcM=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"asterich.top","root":"/","images":"/images","scheme":"Mist","darkmode":false,"version":"8.24.1","exturl":false,"sidebar":{"position":"right","width_expanded":320,"width_dual_column":240,"display":"hide","padding":18,"offset":12},"hljswrap":true,"codeblock":{"theme":{"light":"default","dark":"arta"},"prism":{"light":"prism","dark":"prism-dark"},"copy_button":{"enable":false,"style":null},"fold":{"enable":false,"height":500},"language":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":"utterances","storage":true,"lazyload":false,"nav":null,"activeClass":"utterances"},"stickytabs":false,"motion":{"enable":true,"async":false,"duration":200,"transition":{"menu_item":"fadeInDown","post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"algolia":{"appID":"JCGDBUXTQC","apiKey":"64cda6b0e24004d36fcc17ddc2b4dac3","indexName":"asterich_blog","hits":{"per_page":10}}}</script><script src="/js/config.js" defer></script>
+
+    <meta name="description" content="背景介绍 对于 MHA 架构的 decoder-only transformer 模型而言，访存是一个非常重要的瓶颈，采用 KV Cache 技术之后尤甚。 MQA、GQA 和 MLA 通过对投影后、attention 计算前的 KV 矩阵进行处理，达到了大幅减少计算量和访存量，同时精度上掉点不多的效果。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MQA&#x2F;GQA，以及MLA">
+<meta property="og:url" content="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/index.html">
+<meta property="og:site_name" content="asterich&#39;s blog">
+<meta property="og:description" content="背景介绍 对于 MHA 架构的 decoder-only transformer 模型而言，访存是一个非常重要的瓶颈，采用 KV Cache 技术之后尤甚。 MQA、GQA 和 MLA 通过对投影后、attention 计算前的 KV 矩阵进行处理，达到了大幅减少计算量和访存量，同时精度上掉点不多的效果。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/SHA.png">
+<meta property="og:image" content="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/mha.png">
+<meta property="og:image" content="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/gqa.png">
+<meta property="og:image" content="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/gqa_perf_1.png">
+<meta property="og:image" content="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/gqa_perf_2.png">
+<meta property="og:image" content="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/mla_1.png">
+<meta property="og:image" content="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/mla_rope.png">
+<meta property="og:image" content="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/mla_perf_1.png">
+<meta property="og:image" content="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/mla_perf_2.png">
+<meta property="article:published_time" content="2025-05-26T16:56:35.000Z">
+<meta property="article:modified_time" content="2025-08-19T12:49:17.732Z">
+<meta property="article:author" content="asterich">
+<meta property="article:tag" content="AI">
+<meta property="article:tag" content="LLM">
+<meta property="article:tag" content="MLSys">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/SHA.png">
+
+
+<link rel="canonical" href="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/">
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/","path":"/2025/05/27/MHA、MQA、GQA和MLA/","title":"MQA/GQA，以及MLA"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>MQA/GQA，以及MLA | asterich's blog</title>
+  
+
+
+
+
+
+
+
+
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous" defer></script>
+<script src="/js/utils.js" defer></script><script src="/js/motion.js" defer></script><script src="/js/sidebar.js" defer></script><script src="/js/next-boot.js" defer></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/algoliasearch/5.35.0/lite/builds/browser.umd.js" integrity="sha256-k54K9sZqimlyVUDmX8WGI5Xbe9OvyjOlkoWLdxa79Kk=" crossorigin="anonymous" defer></script><script src="/js/third-party/search/algolia-search.js" defer></script>
+
+
+
+
+
+
+
+  
+
+
+
+
+  
+
+  <script class="next-config" data-name="enableMath" type="application/json">true</script><script class="next-config" data-name="mathjax" type="application/json">{"enable":true,"tags":"none","js":{"url":"https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js","integrity":"sha256-MASABpB4tYktI2Oitl4t+78w/lyA+D7b/s9GEP0JOGI="}}</script>
+<script src="/js/third-party/math/mathjax.js" defer></script>
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<!-- hexo injector head_end start -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hexo-math@4.0.0/dist/style.css">
+<!-- hexo injector head_end end --></head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <div class="column">
+      <header class="header" itemscope itemtype="http://schema.org/WPHeader"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">asterich's blog</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger" aria-label="搜索" role="button">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu"><li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li><li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li><li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li><li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li><li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup">
+      <div class="search-header">
+        <span class="search-icon">
+          <i class="fa fa-search"></i>
+        </span>
+        <div class="search-input-container">
+          <input autocomplete="off" autocapitalize="off" maxlength="80"
+                placeholder="搜索..." spellcheck="false"
+                type="search" class="search-input">
+        </div>
+        <span class="popup-btn-close" role="button">
+          <i class="fa fa-times-circle"></i>
+        </span>
+      </div>
+      <div class="search-result-container">
+        <div class="search-result-icon">
+          <i class="fab fa-algolia fa-5x"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</header>
+        
+  
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%83%8C%E6%99%AF%E4%BB%8B%E7%BB%8D"><span class="nav-number">1.</span> <span class="nav-text">背景介绍</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#shamha"><span class="nav-number">2.</span> <span class="nav-text">SHA&#x2F;MHA</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#sha-single-head-attention"><span class="nav-number">2.1.</span> <span class="nav-text">SHA (Single-Head Attention)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#mha-multi-head-attention"><span class="nav-number">2.2.</span> <span class="nav-text">MHA (Multi-Head Attention)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#rope-issue"><span class="nav-number">2.3.</span> <span class="nav-text">RoPE issue</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#mqagqa"><span class="nav-number">3.</span> <span class="nav-text">MQA&#x2F;GQA</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AE%A1%E7%AE%97"><span class="nav-number">3.1.</span> <span class="nav-text">计算</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%A7%E8%83%BD"><span class="nav-number">3.2.</span> <span class="nav-text">性能</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#mla"><span class="nav-number">4.</span> <span class="nav-text">MLA</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AE%A1%E7%AE%97-1"><span class="nav-number">4.1.</span> <span class="nav-text">计算</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%8E%E7%A7%A9%E5%8E%8B%E7%BC%A9"><span class="nav-number">4.1.1.</span> <span class="nav-text">低秩压缩</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#rope-%E8%A7%A3%E8%80%A6"><span class="nav-number">4.2.</span> <span class="nav-text">RoPE 解耦</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#mla-%E8%83%BD%E8%A1%A8%E8%BE%BE-gqa"><span class="nav-number">4.3.</span> <span class="nav-text">MLA 能表达 GQA?</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%A7%E8%83%BD-1"><span class="nav-number">4.4.</span> <span class="nav-text">性能</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#kv-cache-%E7%94%A8%E9%87%8F%E5%AF%B9%E6%AF%94"><span class="nav-number">4.4.1.</span> <span class="nav-text">KV cache 用量对比</span></a></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%B8%80%E4%BA%9B%E6%83%B3%E6%B3%95"><span class="nav-number">5.</span> <span class="nav-text">一些想法</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%8F%82%E8%80%83%E6%96%87%E7%8C%AE"><span class="nav-number">6.</span> <span class="nav-text">参考文献</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">asterich</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">13</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+          <a href="/categories/">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+          <a href="/tags/">
+        <span class="site-state-item-count">23</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author animated">
+      <span class="links-of-author-item">
+        <a href="https://github.com/asterich" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;asterich" rel="noopener me" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license animated" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" class="cc-opacity" rel="noopener" target="_blank"><img src="https://cdnjs.cloudflare.com/ajax/libs/creativecommons-vocabulary/2020.11.3/assets/license_badges/small/by_nc_sa.svg" alt="Creative Commons"></a>
+  </div>
+
+        </div>
+      </div>
+    </div>
+
+    
+    <div class="sidebar-inner sidebar-blogroll">
+      <div class="links-of-blogroll animated">
+        <div class="links-of-blogroll-title"><i class="fa fa-globe fa-fw"></i>
+          链接
+        </div>
+        <ul class="links-of-blogroll-list">
+            <li class="links-of-blogroll-item">
+              <a href="https://stellarlane.github.io/" title="https:&#x2F;&#x2F;stellarlane.github.io" rel="noopener" target="_blank">https://stellarlane.github.io</a>
+            </li>
+            <li class="links-of-blogroll-item">
+              <a href="https://woodman3.github.io/" title="https:&#x2F;&#x2F;woodman3.github.io" rel="noopener" target="_blank">https://woodman3.github.io</a>
+            </li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+
+
+    </div>
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="asterich">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="asterich's blog">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="post" itemscope itemtype="http://schema.org/CreativeWork">
+      <meta itemprop="name" content="MQA&#x2F;GQA，以及MLA | asterich's blog">
+      <meta itemprop="description" content="">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          MQA/GQA，以及MLA
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2025-05-27 00:56:35" itemprop="dateCreated datePublished" datetime="2025-05-27T00:56:35+08:00">2025-05-27</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2025-08-19 20:49:17" itemprop="dateModified" datetime="2025-08-19T20:49:17+08:00">2025-08-19</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/programming/" itemprop="url" rel="index"><span itemprop="name">编程</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody"><h1 id="背景介绍">背景介绍</h1>
+<p>对于 MHA 架构的 decoder-only transformer
+模型而言，访存是一个非常重要的瓶颈，采用 KV Cache 技术之后尤甚。
+MQA、GQA 和 MLA 通过对投影后、attention 计算前的 KV
+矩阵进行处理，达到了大幅减少计算量和访存量，同时精度上掉点不多的效果。</p>
+<span id="more"></span>
+<h1 id="shamha">SHA/MHA</h1>
+<p>MQA 、 GQA 和 MLA 都基于 MHA 引入的多头注意力，这一节首先通过 SHA
+讲下 attention 的形状，导出 MHA 引入多个头（head）的动机，然后讲一下 MHA
+架构长什么样子。</p>
+<h2 id="sha-single-head-attention">SHA (Single-Head Attention)</h2>
+<p>SHA 是最朴素的 attention 实现，对输入 token 的嵌入向量表示
+X，直接投影 Q, K, V 向量一整块计算。</p>
+<p><img src="/2025/05/27/MHA、MQA、GQA和MLA/SHA.png" alt="decoder 层没有 mask" style="height:500px"></p>
+<p>公式如下（很重要！后面要用到）：</p>
+<p><span class="math display">\[
+Q = XW_Q \\
+K = XW_K \\
+V = XW_V \\
+O = \text{softmax}\left(\frac{QK^T}{\sqrt{d}}\right) \cdot V \\
+\text{output} = OW_O \\
+\]</span></p>
+<h2 id="mha-multi-head-attention">MHA (Multi-Head Attention)</h2>
+<p>MHA 是现在使用最多的架构，它认为 QKV
+如果是一整块的话表达能力不够，切分成几块分别计算 attention
+可以更好捕捉子空间的特征。实现上，它把投影后的 Q, K, V 切割成多个头
+(head) 分别计算，再拼接回原形状与 <span
+class="math inline">\(W_o\)</span> 投影。</p>
+<figure>
+<img src="/2025/05/27/MHA、MQA、GQA和MLA/mha.png" alt="MHA长这样" />
+<figcaption aria-hidden="true">MHA长这样</figcaption>
+</figure>
+<p>令输入为 <span class="math inline">\(X\)</span>，头数为 <span
+class="math inline">\(h\)</span>，总嵌入维度为 <span
+class="math inline">\(d\)</span>，每个头的嵌入维度为 <span
+class="math inline">\(d_h\)</span>，则有 <span class="math display">\[
+d_h = \frac{d}{h}
+\]</span> Q, K, V 的计算和切分如下： <span class="math display">\[
+Q = XW_Q, Q_{1:h} = \textbf{split}(Q, h) \\
+K = XW_K, K_{1:h} = \textbf{split}(K, h) \\
+V = XW_V, V_{1:h} = \textbf{split}(V, h) \\
+\]</span></p>
+<p>维度如下，其中 <span class="math inline">\(bs\)</span> 和 <span
+class="math inline">\(seqlen\)</span> 分别对应批处理数和序列长度: $$
+<span class="math display">\[\begin{align*}
+\text{dim}(Q_i) &amp;= [bs, d_h] \\
+\text{dim}(K_i) &amp;= \text{dim}(V_i) = [bs, seqlen, d_h] \\
+\text{dim}(W_Q) &amp;= \text{dim}(W_K) = \text{dim}(W_V) \\
+                 &amp;= [\text{hidden size}, d] = [\text{hidden size},
+h\cdot d_h]
+
+\end{align*}\]</span> $$</p>
+<p>而 attention 操作变成各个头分别计算： <span
+class="math display">\[O_i =
+\text{softmax}\left(\frac{Q_iK_i^T}{\sqrt{d_h}}\right) \cdot
+V_i\]</span> 最后的线性层计算如下： <span class="math display">\[O =
+\textbf{concat}(O_i) \\
+\text{output} = O \cdot W_O\]</span></p>
+<h2 id="rope-issue">RoPE issue</h2>
+<p>Q 和 K 在进行 attention 操作之前还会过一遍位置编码（一般是
+RoPE），这样 K 会带上位置信息，所以 KV cache 需要 K 和 V
+分别存，不能直接存 token 嵌入。这个会给后面的 MLA 造成一些小小困难。</p>
+<blockquote>
+<p>如果 KV cache 的位置可能不连续（例如
+StreamingLLM、联网文档），那么要储存的就是位置编码前的 KV
+向量，要用到的时候再重算位置编码好了。。。</p>
+</blockquote>
+<h1 id="mqagqa">MQA/GQA</h1>
+<p>MQA/GQA 主要是这篇论文 <a
+target="_blank" rel="noopener" href="https://arxiv.org/pdf/2305.13245">https://arxiv.org/abs/2305.13245</a>
+，其动机是 KV 的表达维度可能不需要 MHA 那么大。</p>
+<figure>
+<img src="/2025/05/27/MHA、MQA、GQA和MLA/gqa.png"
+alt="MHA、MQA、GQA对比" />
+<figcaption aria-hidden="true">MHA、MQA、GQA对比</figcaption>
+</figure>
+<p>GQA
+的解决方案也很简单，直接把组数（头数）变少，计算量和存储量就变少了！MQA
+是 GQA 组数 =1 的极端情况。</p>
+<blockquote>
+<p>值得一提的是， Q 优化空间不大，还是照常切分，而 KV
+每个头的嵌入维度也跟以前一样。</p>
+</blockquote>
+<h2 id="计算">计算</h2>
+<p>令 K, V 的组数为<span class="math inline">\(g\ (g &lt;
+h)\)</span>，则有 <span class="math display">\[
+Q = XW_Q, Q_{1:h} = \textbf{split}(Q, h) \\
+K = XW_K, K_{1:g} = \textbf{split}(K, g) \\
+V = XW_V, V_{1:g} = \textbf{split}(V, g) \\
+\]</span></p>
+<p>其中： $$ <span class="math display">\[\begin{align*}
+d_g &amp;= d_h \\
+\text{dim}(Q_i) &amp;= [bs, d_h] \\
+\text{dim}(K_j) &amp;= \text{dim}(V_j) = [bs, seqlen, d_g] \\
+\text{dim}(W_Q) &amp;= [\text{hidden size}, d] = [\text{hidden size},
+h\cdot d_h] \\
+\text{dim}(W_K) &amp;= \text{dim}(W_V)  = [\text{hidden size}, g\cdot
+d_g] = [\text{hidden size}, g\cdot d_h]
+
+\end{align*}\]</span></p>
+<p>$$</p>
+<p>而 attention 操作变成一个组内的多个 Q 头共享一个 KV 头： <span
+class="math display">\[
+O_i = \text{softmax}\left(\frac{Q_iK_j^T}{\sqrt{d_g}}\right) \cdot V_j ,
+\text{ for i in group j}
+\]</span></p>
+<p>最后的线性层维度跟 MHA 的一样，计算也一样： <span
+class="math display">\[
+O = \textbf{concat}(O_i) \\
+\text{output} = O \cdot W_O
+\]</span></p>
+<h2 id="性能">性能</h2>
+<p>综合性能考虑选择 g=8，掉点并不多，而且推理时间确实省下来了（GQA-8
+0.28s, MHA 1.51s）。</p>
+<p><img src="/2025/05/27/MHA、MQA、GQA和MLA/gqa_perf_1.png" /></p>
+<p>论文作者还做了一组实验，非常直观地表明了 GQA 在头数变多时会退化回 MHA
+。</p>
+<p><img src="/2025/05/27/MHA、MQA、GQA和MLA/gqa_perf_2.png" width="500px"></p>
+<h1 id="mla">MLA</h1>
+<figure>
+<img src="/2025/05/27/MHA、MQA、GQA和MLA/mla_1.png" alt="MLA长这样" />
+<figcaption aria-hidden="true">MLA长这样</figcaption>
+</figure>
+<p>MLA 由<a
+target="_blank" rel="noopener" href="https://arxiv.org/abs/2405.04434">Deepseek-V2</a>引入，并在 <a
+target="_blank" rel="noopener" href="https://arxiv.org/abs/2412.19437">Deepseek-V3</a>
+当中发扬光大。其并不像 GQA 那样简单粗暴砍头数，而是对 KV
+向量做了低秩映射，压缩后存到 KV cache
+里面，被用到的时候再映射回原来的维度。从上图中可以看到映射回来之后，K, V
+的头数和头维度都是跟 MHA
+一样的。后面会提到这种方式带来了更强的表达能力。</p>
+<h2 id="计算-1">计算</h2>
+<h3 id="低秩压缩">低秩压缩</h3>
+<p>先压缩 KV： <span class="math display">\[
+C = XW_{DKV} \\
+K_C = CW_{UK} \\
+V_C = CW_{UV} \\
+\]</span></p>
+<p>为简化说明，<span class="math inline">\(bs\)</span> 和 <span
+class="math inline">\(seqlen\)</span> 暂定为 1，则： <span
+class="math display">\[
+\text{dim}(C) = d_c \ll d = h\cdot d_h \\
+\text{dim}(W_{UK}) =
+\text{dim}(W_{UV}) = [d, d_c]
+\]</span></p>
+<p>值得注意的是，为了减少激活的参数量，MLA 也会压缩 Q： <span
+class="math display">\[
+C_Q = XW_{DQ} \\
+Q_C = C_QW_{UQ} \\
+\]</span></p>
+<p>不过这样对减少 KV cache 没有帮助。</p>
+<p>对 MHA 的 attention 计算进行展开： <span class="math display">\[
+\begin{align}
+O_i &amp;= \text{softmax}\left(\frac{Q_iK_i^T}{\sqrt{d_h}}\right) \cdot
+V_i \\
+&amp;=
+\text{softmax}\left(\frac{XW_QW_{UK}^TW_{DKV}^TX^T}{\sqrt{d_h}}\right)
+\cdot V_i \\
+&amp;= \text{softmax}\left(\frac{XW_{MergedUK}C^T}{\sqrt{d_h}}\right)
+\cdot CW_{UV} \\
+\end{align}
+\]</span></p>
+<p>我们发现 (2) 步的 <span class="math inline">\(W_Q\)</span> 和 <span
+class="math inline">\(W_{UK}^T\)</span> 这两部分权重似乎能够合并成
+(3)，这样就能少算一次 Q 的投影操作，但是由于上文的 RoPE
+阻挠，其实还是有些问题的，需要下一节的 RoPE 解耦。</p>
+<h2 id="rope-解耦">RoPE 解耦</h2>
+<p><img src="/2025/05/27/MHA、MQA、GQA和MLA/mla_rope.png" width="500px"></p>
+<p>为了表达位置信息，在真正进行 <span
+class="math inline">\(Q_iK_i^T\)</span> 乘法之前还要对两者分别使用
+RoPE，普通的 MHA 存 KV cache 的时候也是分别存 <span
+class="math inline">\(\text{RoPE}(K_i)\)</span> 和 <span
+class="math inline">\(V_i\)</span>，而不是 token 原先的嵌入表示。</p>
+<p>但是，RoPE 对 Q 和 K 都是敏感的！如果对 K 使用低秩压缩，上面的 <span
+class="math inline">\(W_{UK}\)</span> 会带上位置信息，这样的话跟 <span
+class="math inline">\(W_Q\)</span> 合并不了，大致像这样： <span
+class="math display">\[
+Q_iK_i^T = XW_Q\cdot \text{RoPE} \cdot \text{RoPE}^T \cdot W_{UK}^TC^T
+\]</span></p>
+<p>很显然压缩结果 C 还是存不了的。</p>
+<p>通常而言，我们会选择每一次对所有的 K 重算
+RoPE，而论文作者采用了另一种解决方法：使用一个嵌入维度比较小的 MQA，带上
+RoPE 信息算出另一对 Q 和 K，先直接连接在每个头 <span
+class="math inline">\(Q_{C,i},K_{C,i}\)</span> 后面，再进行 attention
+操作： <span class="math display">\[
+\begin{align}
+\text{let } Q_{R,i} \text{ and } &amp; K_R \text{ be the result of mini
+MQA,} \\
+Q_{C,i} \text{ and } &amp; K_{C,i} \text{ be the result of MLA,}
+\text{ then} \\
+Q_i &amp;= [Q_{C,i}; \text{RoPE}(Q_{R,i})] \\
+K_i &amp;= [K_{C,i}; \text{RoPE}(K_{R})] \\
+O_i &amp;= \text{softmax}\left(\frac{Q_iK_i^T}{\sqrt{d_h +
+d_h^R}}\right) \cdot V_i \\
+\end{align}
+\]</span></p>
+<p>现在能把 C 存下来了，再也不用分别存 K 和 V 了！同时，这个迷你 MQA
+的计算量相比重算 RoPE 也要小一些。</p>
+<p>应该还需要算上 MQA 的 <span
+class="math inline">\(\text{RoPE}(K)\)</span>，单层的存储量是 <span
+class="math inline">\(d_c+d_{R,h}\)</span> 个元素。一般而言，<span
+class="math inline">\(d_{R,h} &lt; d_h\)</span>。</p>
+<p>设 MQA 的嵌入维度为 <span
+class="math inline">\(d_R\)</span>，Deepseek-V2 超参数选择是 <span
+class="math inline">\(h = 128, d_h = 128, d_c = 512, d_{Q,c} = 1536,
+d_{R,h} = 64\)</span>。</p>
+<h2 id="mla-能表达-gqa">MLA 能表达 GQA?</h2>
+<p>思考：GQA 可以看作少量的 KV 头复制粘贴到了 Q 的头数？</p>
+<p>如果 <span class="math inline">\(W_{UK},W_{UV}\)</span>
+是这么一种模式： <span class="math display">\[
+W_U = [w_{U,1}, w_{U,1},\dots, w_{U,2}, w_{U,2}, \dots, w_{U,g},
+w_{U,g}]
+\]</span></p>
+<p>即 <span class="math inline">\(W_U\)</span>
+可以被分块，每个块里的元素都一样，那么升维的各个 KV
+头也会出现按组重复的情况，就变成 GQA 了。反之并不行，因为 GQA 组内的 K
+和 V 都是一样的，而 MLA 仍然能保持一些差异性，这就是 <a
+target="_blank" rel="noopener" href="https://arxiv.org/abs/2502.07864">TransMLA</a> 说的事情。</p>
+<h2 id="性能-1">性能</h2>
+<p>论文作者做了 MHA 和 MLA 的对比实验，结果如下表：</p>
+<p><img src="/2025/05/27/MHA、MQA、GQA和MLA/mla_perf_1.png" /></p>
+<p>可以看到参数量略微降低，KV cache
+用量显著减少，但是并没有掉点；论文没测吞吐/延迟。</p>
+<h3 id="kv-cache-用量对比">KV cache 用量对比</h3>
+<p><img src="/2025/05/27/MHA、MQA、GQA和MLA/mla_perf_2.png" /></p>
+<p>整体对比下来，用量 MHA &gt; GQA &gt; MLA ~ MQA，表达能力 MHA ~ MQA
+&gt; GQA &gt; MQA。</p>
+<p>值得注意的是 MLA 的用量依赖于 <span class="math inline">\(d_c,
+d_{R,h}\)</span> 两个超参数的选择，好在即使比<span
+class="math inline">\(h\cdot d_h\)</span>小很多也够用了。</p>
+<h1 id="一些想法">一些想法</h1>
+<p>GQA 和 MLA 都能省下很多计算量/存储量，尤其是，MLA 的 KV cache 用量比
+GQA 还要少很多，RoPE 解耦也能让它更容易和一些 KV cache
+的复用技巧相结合。这两种方法各自能省下多少计算量这个懒得算了。。。</p>
+<p>之所以能狠狠压缩 K 和 V 的维度，主要还是因为 LLM
+（起码在同一层内）是非常非常稀疏的，另外由于相邻层间权重相近，也有一些层间复用的做法。</p>
+<h1 id="参考文献">参考文献</h1>
+<ul>
+<li>MHA: <a
+target="_blank" rel="noopener" href="https://arxiv.org/pdf/1706.03762">https://arxiv.org/pdf/1706.03762</a></li>
+<li>MQA: <a
+target="_blank" rel="noopener" href="https://arxiv.org/pdf/1911.02150">https://arxiv.org/pdf/1911.02150</a></li>
+<li>GQA: <a
+target="_blank" rel="noopener" href="https://arxiv.org/pdf/2502.07864">https://arxiv.org/pdf/2502.07864</a></li>
+<li>DeepSeek-V2, MLA: <a
+target="_blank" rel="noopener" href="https://arxiv.org/pdf/2405.04434">https://arxiv.org/pdf/2405.04434</a></li>
+<li>TransMLA: <a
+target="_blank" rel="noopener" href="https://arxiv.org/pdf/2502.07864">https://arxiv.org/pdf/2502.07864</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          
+
+<div class="post-copyright">
+<ul>
+  <li class="post-copyright-author">
+      <strong>本文作者： </strong>asterich
+  </li>
+  <li class="post-copyright-link">
+      <strong>本文链接：</strong>
+      <a href="https://asterich.top/2025/05/27/MHA%E3%80%81MQA%E3%80%81GQA%E5%92%8CMLA/" title="MQA&#x2F;GQA，以及MLA">https://asterich.top/2025/05/27/MHA、MQA、GQA和MLA/</a>
+  </li>
+  <li class="post-copyright-license">
+      <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+          <div class="post-tags">
+              <a href="/tags/AI/" rel="tag"># AI</a>
+              <a href="/tags/LLM/" rel="tag"># LLM</a>
+              <a href="/tags/MLSys/" rel="tag"># MLSys</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2024/12/31/2024%E5%B9%B4%E7%BB%88%E6%80%BB%E7%BB%93/" rel="prev" title="2024年终总结">
+                  <i class="fa fa-angle-left"></i> 2024年终总结
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+    <div class="comments utterances-container"></div>
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+  <div class="copyright">
+    &copy; 
+    <span itemprop="copyrightYear">2025</span>
+    <span class="with-love">
+      <i class="fa fa-heart"></i>
+    </span>
+    <span class="author" itemprop="copyrightHolder">asterich</span>
+  </div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/mist/" rel="noopener" target="_blank">NexT.Mist</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+  <div class="sidebar-dimmer"></div>
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up fa-lg"></i>
+    <span>0%</span>
+  </div>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+<script class="next-config" data-name="utterances" type="application/json">{"enable":true,"repo":"asterich/asterich_blog_comment","issue_term":"pathname","theme":"github-light"}</script>
+<script src="/js/third-party/comments/utterances.js" defer></script>
+
+</body>
+</html>
