@@ -31,11 +31,13 @@ SHA 是最朴素的 attention 实现，对输入 token 的嵌入向量表示 X�
 公式如下（很重要！后面要用到）：
 
 $$
-Q = XW_Q \\
-K = XW_K \\
-V = XW_V \\
-O = \text{softmax}\left(\frac{QK^T}{\sqrt{d}}\right) \cdot V \\
-\text{output} = OW_O \\
+\begin{align}
+Q &= XW_Q \\
+K &= XW_K \\
+V &= XW_V \\
+O &= \text{softmax}\left(\frac{QK^T}{\sqrt{d}}\right) \cdot V \\
+\text{output} &= OW_O \\
+\end{align}
 $$
 
 ## MHA (Multi-Head Attention)
@@ -45,32 +47,42 @@ MHA 是现在使用最多的架构，它认为 QKV 如果是一整块的话表�
 ![MHA长这样](/2025/05/27/MHA、MQA、GQA和MLA/mha.png)
 
 令输入为 $X$，头数为 $h$，总嵌入维度为 $d$，每个头的嵌入维度为 $d_h$，则有
+
 $$
 d_h = \frac{d}{h}
 $$
+
 Q, K, V 的计算和切分如下：
+
 $$
-Q = XW_Q, Q_{1:h} = \textbf{split}(Q, h) \\
-K = XW_K, K_{1:h} = \textbf{split}(K, h) \\
-V = XW_V, V_{1:h} = \textbf{split}(V, h) \\
+\begin{align}
+Q &= XW_Q, &&Q_{1:h} = \textbf{split}(Q, h) \\
+K &= XW_K, &&K_{1:h} = \textbf{split}(K, h) \\
+V &= XW_V, &&V_{1:h} = \textbf{split}(V, h) \\
+\end{align}
 $$
 
 维度如下，其中 $bs$ 和 $seqlen$ 分别对应批处理数和序列长度:
+
 $$
-\begin{align*}
+\begin{align}
 \text{dim}(Q_i) &= [bs, d_h] \\
 \text{dim}(K_i) &= \text{dim}(V_i) = [bs, seqlen, d_h] \\
  \text{dim}(W_Q) &= \text{dim}(W_K) = \text{dim}(W_V) \\
-                 &= [\text{hidden size}, d] = [\text{hidden size}, h\cdot d_h]
-
-\end{align*}
+                 &= [\text{hidden size}, d] = [\text{hidden size}, h\cdot d_h] \\
+\end{align}
 $$
 
 而 attention 操作变成各个头分别计算：
 $$O_i = \text{softmax}\left(\frac{Q_iK_i^T}{\sqrt{d_h}}\right) \cdot V_i$$
 最后的线性层计算如下：
-$$O = \textbf{concat}(O_i) \\
-\text{output} = O \cdot W_O$$
+
+$$
+\begin{align}
+O &= \textbf{concat}(O_i) \\
+\text{output} &= O \cdot W_O \\
+\end{align}
+$$
 
 ## RoPE issue
 
@@ -91,22 +103,23 @@ GQA 的解决方案也很简单，直接把组数（头数）变少，计算量�
 ## 计算
 令 K, V 的组数为$g\ (g < h)$，则有
 $$
-Q = XW_Q, Q_{1:h} = \textbf{split}(Q, h) \\
-K = XW_K, K_{1:g} = \textbf{split}(K, g) \\
-V = XW_V, V_{1:g} = \textbf{split}(V, g) \\
+\begin{align*}
+Q &= XW_Q, && Q_{1:h} = \textbf{split}(Q, h) \\
+K &= XW_K, && K_{1:g} = \textbf{split}(K, g) \\
+V &= XW_V, && V_{1:g} = \textbf{split}(V, g) \\
+\end{align*}
 $$
 
 其中：
+
 $$
 \begin{align*}
 d_g &= d_h \\
 \text{dim}(Q_i) &= [bs, d_h] \\
 \text{dim}(K_j) &= \text{dim}(V_j) = [bs, seqlen, d_g] \\
  \text{dim}(W_Q) &= [\text{hidden size}, d] = [\text{hidden size}, h\cdot d_h] \\ 
-\text{dim}(W_K) &= \text{dim}(W_V)  = [\text{hidden size}, g\cdot d_g] = [\text{hidden size}, g\cdot d_h]
-
+\text{dim}(W_K) &= \text{dim}(W_V)  = [\text{hidden size}, g\cdot d_g] = [\text{hidden size}, g\cdot d_h] \\
 \end{align*}
-
 $$
 
 
@@ -117,8 +130,10 @@ $$
 
 最后的线性层维度跟 MHA 的一样，计算也一样：
 $$
-O = \textbf{concat}(O_i) \\
-\text{output} = O \cdot W_O
+\begin{align}
+O &= \textbf{concat}(O_i) \\
+\text{output} &= O \cdot W_O \\
+\end{align}
 $$
 
 ## 性能
@@ -143,22 +158,28 @@ MLA 由[Deepseek-V2](https://arxiv.org/abs/2405.04434)引入，并在 [Deepseek-
 
 先压缩 KV：
 $$
-C = XW_{DKV} \\
-K_C = CW_{UK} \\
-V_C = CW_{UV} \\
+\begin{align}
+C &= XW_{DKV} \\
+K_C &= CW_{UK} \\
+V_C &= CW_{UV} \\
+\end{align}
 $$
 
 为简化说明，$bs$ 和 $seqlen$ 暂定为 1，则：
 $$
-\text{dim}(C) = d_c \ll d = h\cdot d_h \\
-\text{dim}(W_{UK}) = 
+\begin{align}
+&\text{dim}(C) = d_c \ll d = h\cdot d_h \\
+&\text{dim}(W_{UK}) = 
 \text{dim}(W_{UV}) = [d, d_c]
+\end{align}
 $$
 
 值得注意的是，为了减少激活的参数量，MLA 也会压缩 Q：
 $$
-C_Q = XW_{DQ} \\
-Q_C = C_QW_{UQ} \\
+\begin{align}
+C_Q &= XW_{DQ} \\
+Q_C &= C_QW_{UQ} \\
+\end{align}
 $$
 
 不过这样对减少 KV cache 没有帮助。
